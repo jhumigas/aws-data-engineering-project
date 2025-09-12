@@ -1,0 +1,1 @@
+CALL mysql.rds_set_configuration('binlog retention hours', 24);
