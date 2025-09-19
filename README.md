@@ -9,6 +9,9 @@ They have an application running on MySQL database on-premise, and an analyst qu
 
 However, there start a challenge: as the startup scale, they needs more analytics, for marketing campaigns, and business strategy however the current database is not optimized for analytics.
 
+We build the different services required from ingesting data in our bronze layer to exposing it into a dashboars in  QuickSight.
+![Orchestrator](./docs/architecture/orchestrator.png)
+
 ## Pre-requisites
 
 Ideally you should be familiar with AWS, with some understand of networking, security etc.

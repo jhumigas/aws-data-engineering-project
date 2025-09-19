@@ -70,4 +70,14 @@
     - Test the rules to make sure they work
     - Once you are ready to run EventBridge rules, make sure to clean all the intermediate steps we did prior meaning removing bronze, silver layer zone, resetting job bookmarks on glue jobs
 
+11 **Managing PII information**: see [this](https://www.youtube.com/watch?v=vznDgJkoH7k):
+    - Create lake formation
+    - Set up lake formation administrator
+    - Register data lake locations
+    - Create data analyst role and allow in the trust policy that it can be assumed by anyone
+    - Create user and the role 
+    - Create LF-Tags for PII Classification
+    - Apply Tags to Tables and Columns
+    - Grant Lake Formation Permissions (Non-PII Data Only)
+
 11. **Clean resources**: Once you are done, and are satisfied clean up all resources
