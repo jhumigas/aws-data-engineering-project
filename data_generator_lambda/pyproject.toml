@@ -1,0 +1,13 @@
+[project]
+name = "data-generator-lambda"
+version = "0.1.0"
+description = "Simulates data generation for an e-commerce application"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "mysql-connector-python>=9.0.0",
+    "Faker>=20.0.0",
+]
+
+[tool.uv]
+managed = true
