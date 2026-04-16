@@ -35,7 +35,17 @@ resource "null_resource" "lambda_build" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${path.module}/../../../data_generator_lambda && rm -rf build && mkdir -p build && uv pip install . --target build/ --python-platform x86_64-unknown-linux-gnu && cp lambda_function.py build/"
+    command = <<-EOT
+      cd ${path.module}/../../../data_generator_lambda
+      rm -rf build
+      mkdir -p build
+      uv pip install . \
+        --target build/ \
+        --python-platform x86_64-unknown-linux-gnu \
+        --python-version 3.9 \
+        --only-binary=:all:
+      cp lambda_function.py build/
+    EOT
   }
 }
 
