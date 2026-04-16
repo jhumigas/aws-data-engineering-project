@@ -1,0 +1,36 @@
+<h2>Refined Approach: Local Flyway</h2>
+<p class="subtitle">Direct automation using Flyway installed on your machine</p>
+
+<div class="mockup">
+  <div class="mockup-header">Local Automation Flow</div>
+  <div class="mockup-body" style="padding: 20px;">
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+      <div class="card">
+        <div class="label">1. Infrastructure</div>
+        <h3>Terraform Apply</h3>
+        <p>Provisions RDS and outputs the connection details.</p>
+      </div>
+      <div style="text-align: center; font-size: 20px;">▼</div>
+      <div class="card" style="border: 2px solid #28a745;">
+        <div class="label">2. Database Schema</div>
+        <h3>Flyway Migrate (Local)</h3>
+        <p>Terraform triggers your local Flyway CLI to connect to RDS and run <code>V1__Initial_Schema.sql</code>.</p>
+      </div>
+      <div style="text-align: center; font-size: 20px;">▼</div>
+      <div class="card">
+        <div class="label">3. Data Stream</div>
+        <h3>DMS & Generator</h3>
+        <p>Replication starts and Lambda begins populating the now-ready tables.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Action Items</h3>
+  <ul>
+    <li>Rename DDL script to Flyway convention (<code>V1__...</code>)</li>
+    <li>Install Flyway locally (<code>brew install flyway</code>)</li>
+    <li>Update Terraform to call the local Flyway binary</li>
+  </ul>
+</div>
