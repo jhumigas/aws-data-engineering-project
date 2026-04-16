@@ -11,9 +11,14 @@ wheels/
 
 # Packages
 data_generator_lambda/package
+data_generator_lambda/build/
+*.zip
 
 # Terraform
 .terraform
+*.tfstate
+*.tfstate.backup
 
 # tmp
 tmp/
+.DS_Store
