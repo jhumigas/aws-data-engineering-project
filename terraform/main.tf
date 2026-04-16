@@ -87,3 +87,21 @@ module "step_functions" {
   environment    = var.environment
   glue_job_names = module.glue.job_names
 }
+
+resource "null_resource" "db_migration" {
+  triggers = {
+    migration_sha1 = sha1(join("", [for f in fileset("${path.module}/../db/migration", "*.sql") : filesha1("${path.module}/../db/migration/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      flyway migrate \
+        -url=jdbc:mysql://${module.rds.db_instance_endpoint}/dev \
+        -user=${module.rds.db_instance_username} \
+        -password='${module.rds.db_instance_password}' \
+        -locations=filesystem:${path.module}/../db/migration
+    EOT
+  }
+
+  depends_on = [module.rds]
+}
