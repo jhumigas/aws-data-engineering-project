@@ -105,3 +105,19 @@ resource "null_resource" "db_migration" {
 
   depends_on = [module.rds]
 }
+
+resource "null_resource" "start_dms_task" {
+  depends_on = [null_resource.db_migration, module.dms]
+
+  provisioner "local-exec" {
+    command = "aws dms start-replication-task --replication-task-arn ${module.dms.replication_task_arn} --start-replication-task-type start-replication --region ${var.aws_region}"
+  }
+}
+
+resource "null_resource" "trigger_generator" {
+  depends_on = [null_resource.start_dms_task, module.lambda]
+
+  provisioner "local-exec" {
+    command = "aws lambda invoke --function-name ${module.lambda.function_name} --region ${var.aws_region} /tmp/lambda_response.json"
+  }
+}
