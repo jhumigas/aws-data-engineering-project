@@ -6,6 +6,15 @@ output "db_instance_endpoint" {
   value = aws_db_instance.main.endpoint
 }
 
+output "db_instance_username" {
+  value = aws_db_instance.main.username
+}
+
+output "db_instance_password" {
+  value     = aws_db_instance.main.password
+  sensitive = true
+}
+
 output "db_instance_id" {
   value = aws_db_instance.main.id
 }
