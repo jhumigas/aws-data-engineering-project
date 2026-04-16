@@ -1,0 +1,74 @@
+<h2>Option A: Choosing a Migration Runner</h2>
+<p class="subtitle">Liquibase / Flyway implementation details</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">1. Local Runner</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Easiest to debug</li>
+            <li>No extra AWS cost</li>
+            <li>Direct use of local .sql files</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Requires local installation</li>
+            <li>Needs local network access to RDS</li>
+          </ul>
+        </div>
+      </div>
+      <div class="label">Workflow</div>
+      <p><code>terraform apply</code> ➔ <code>local-exec</code> ➔ <code>flyway migrate</code></p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">2. Lambda Runner</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>True "Infrastructure as Code"</li>
+            <li>Works in CI/CD pipelines</li>
+            <li>Bypasses local network issues</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Requires packaging a JAR/Binary</li>
+            <li>More IAM permissions needed</li>
+          </ul>
+        </div>
+      </div>
+      <div class="label">Workflow</div>
+      <p><code>terraform apply</code> ➔ <code>aws_lambda_invocation</code> ➔ <code>migrate</code></p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Your Preference</h3>
+  <div class="options">
+    <div class="option" data-choice="local" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>Local Runner</h3>
+        <p>I'll install the tool locally and let Terraform trigger it.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="lambda" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>Lambda Runner</h3>
+        <p>I want the deployment to be fully self-contained in AWS.</p>
+      </div>
+    </div>
+  </div>
+</div>

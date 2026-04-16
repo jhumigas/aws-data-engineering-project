@@ -1,0 +1,41 @@
+<h2>Option A (Refined): Flyway in Docker</h2>
+<p class="subtitle">Clean, portable DDL automation without local installs</p>
+
+<div class="mockup">
+  <div class="mockup-header">Dockerized Migration Workflow</div>
+  <div class="mockup-body" style="padding: 20px;">
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div class="card" style="flex: 1;">
+        <div class="label">Input</div>
+        <h3>SQL Scripts</h3>
+        <p><code>db/migration/*.sql</code></p>
+      </div>
+      <div style="font-size: 24px;">➔</div>
+      <div class="card" style="flex: 2; border: 2px solid #007bff;">
+        <div class="label">Runner</div>
+        <h3>Docker: flyway/flyway</h3>
+        <p>Mounts local scripts and connects to RDS over the network.</p>
+      </div>
+      <div style="font-size: 24px;">➔</div>
+      <div class="card" style="flex: 1;">
+        <div class="label">Target</div>
+        <h3>RDS MySQL</h3>
+        <p>Schema: <code>dev</code></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Implementation Details</h3>
+  <ul>
+    <li><strong>Mounting</strong>: <code>-v ./db/migration:/flyway/sql</code></li>
+    <li><strong>Networking</strong>: Requires RDS to be publicly accessible (already enabled).</li>
+    <li><strong>Automation</strong>: Triggered by Terraform <code>local-exec</code>.</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>Ready to proceed?</h3>
+  <p>I will include the Docker command and folder restructuring in the implementation plan.</p>
+</div>

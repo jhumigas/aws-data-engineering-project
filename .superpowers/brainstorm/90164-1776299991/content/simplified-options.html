@@ -1,0 +1,57 @@
+<h2>Simplified DDL Automation</h2>
+<p class="subtitle">Focusing on tools you already have: <b>UV</b> and <b>Lambda</b></p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">1. Lambda Init (Recommended)</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Full "Hands-off" deployment</li>
+            <li>No local DB tools required</li>
+            <li>Verified within your VPC</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Requires adding SQL logic to Lambda</li>
+          </ul>
+        </div>
+      </div>
+      <div class="label">Workflow</div>
+      <p><code>terraform apply</code> ➔ <code>lambda_invoke(init)</code></p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">2. Local UV Script</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Uses <code>uv</code> (already installed)</li>
+            <li>Direct control over DDL</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Semi-manual</li>
+            <li>Requires local network access to RDS</li>
+          </ul>
+        </div>
+      </div>
+      <div class="label">Workflow</div>
+      <p><code>uv run scripts/setup_db.py</code></p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Decision Point</h3>
+  <p>Which approach would you like to use to get the tables created in RDS?</p>
+</div>
