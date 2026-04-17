@@ -58,6 +58,21 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# Private route table — no IGW route; private subnets use VPC endpoints for AWS services
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-private-rt"
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  count          = length(var.private_subnet_cidrs)
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
+}
+
 # Default Security Group to allow internal communication
 resource "aws_security_group" "default" {
   name        = "${var.project_name}-${var.environment}-default-sg"
@@ -84,11 +99,15 @@ resource "aws_security_group" "default" {
 }
 
 # VPC Endpoints (Gateway for S3)
+# Must include both public and private route tables so all services (DMS, Lambda, Glue) reach S3
 resource "aws_vpc_endpoint" "s3" {
   vpc_id       = aws_vpc.main.id
   service_name = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids = [aws_route_table.public.id] # Add private route tables if creating NAT Gateway
+  route_table_ids = [
+    aws_route_table.public.id,
+    aws_route_table.private.id
+  ]
 }
 
 # VPC Endpoints (Interface) - Secrets Manager, Redshift, STS, Glue

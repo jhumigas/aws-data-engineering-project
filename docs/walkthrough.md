@@ -38,6 +38,12 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    terraform apply
    ```
 
+6. **Manual RDS Configuration (CDC)**:
+   Connect to the RDS instance (e.g., using DBeaver) and run the following command to finalize the binlog retention for CDC:
+   ```sql
+   CALL mysql.rds_set_configuration('binlog retention hours', 24);
+   ```
+
 ## Resources Created
 The following key resources are provisioned:
 - **VPC**: Custom VPC with public/private subnets and endpoints.
@@ -64,5 +70,6 @@ To destroy all resources:
 ```bash
 terraform destroy
 ```
+
 > [!CAUTION]
 > This will delete all data in the RDS, Redshift, and S3 buckets (since `force_destroy` is enabled for demo).

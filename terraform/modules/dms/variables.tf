@@ -25,3 +25,7 @@ variable "target_bucket_name" {
 variable "rds_security_group_id" {
   type = string
 }
+
+variable "aws_region" {
+  type = string
+}

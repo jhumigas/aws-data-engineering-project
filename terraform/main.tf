@@ -3,7 +3,7 @@ module "vpc" {
 
   project_name       = var.project_name
   environment        = var.environment
-  vpc_cidr           = "10.0.0.0/16" 
+  vpc_cidr           = "10.0.0.0/16"
   aws_region         = var.aws_region
   availability_zones = var.availability_zones
 }
@@ -18,10 +18,10 @@ module "s3" {
 module "rds" {
   source = "./modules/rds"
 
-  project_name       = var.project_name
-  environment        = var.environment
-  vpc_id             = module.vpc.vpc_id
-  subnet_ids         = module.vpc.public_subnet_ids
+  project_name = var.project_name
+  environment  = var.environment
+  vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.public_subnet_ids
   # allowed_security_group_ids passed if needed, or rely on internal rules
 }
 
@@ -35,14 +35,8 @@ module "dms" {
   source_secret_arn     = module.rds.secret_arn
   rds_security_group_id = module.rds.security_group_id
   target_bucket_name    = module.s3.bucket_id
+  aws_region            = var.aws_region
 }
-
-# Update: Need to better handle bucket name extraction or update S3 module.
-# S3 module outputs bucket_id which IS the name.
-# Re-checking S3 module output:
-# output "bucket_id" { value = aws_s3_bucket.main.id } -> This is the name.
-# output "bucket_arn" { value = aws_s3_bucket.main.arn }
-# So I can just use module.s3.bucket_id
 
 module "lambda" {
   source = "./modules/lambda"
@@ -89,21 +83,22 @@ module "step_functions" {
 }
 
 resource "null_resource" "db_migration" {
+  depends_on = [module.rds]
+
   triggers = {
-    migration_sha1 = sha1(join("", [for f in fileset("${path.module}/../db/migration", "*.sql") : filesha1("${path.module}/../db/migration/${f}")]))
+    migration_hash = sha1(join("", [for f in fileset("${path.module}/../db/migration", "*.sql") : filesha1("${path.module}/../db/migration/${f}")]))
   }
 
   provisioner "local-exec" {
+    environment = {
+      FLYWAY_PASSWORD = module.rds.db_instance_password
+    }
     command = <<-EOT
-      flyway migrate \
-        -url=jdbc:mysql://${module.rds.db_instance_endpoint}/dev \
-        -user=${module.rds.db_instance_username} \
-        -password='${module.rds.db_instance_password}' \
-        -locations=filesystem:${path.module}/../db/migration
+      bash ${path.module}/../db/migrate.sh \
+           ${replace(module.rds.db_instance_endpoint, ":3306", "")} \
+           ${module.rds.db_instance_username}
     EOT
   }
-
-  depends_on = [module.rds]
 }
 
 resource "null_resource" "start_dms_task" {
@@ -120,4 +115,38 @@ resource "null_resource" "trigger_generator" {
   provisioner "local-exec" {
     command = "aws lambda invoke --function-name ${module.lambda.function_name} --region ${var.aws_region} /tmp/lambda_response.json"
   }
+}
+
+resource "aws_s3_bucket_policy" "bucket_access" {
+  bucket = module.s3.bucket_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = [
+            module.dms.s3_role_arn,
+            module.glue.role_arn,
+            module.redshift.role_arn
+          ]
+        }
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:PutObjectTagging",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts"
+        ]
+        Resource = [
+          module.s3.bucket_arn,
+          "${module.s3.bucket_arn}/*"
+        ]
+      }
+    ]
+  })
 }
