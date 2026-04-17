@@ -1,9 +1,14 @@
-# Security Group for DMS
+# ===================================================================
+# DMS Security Group - Replication Network Access
+# ===================================================================
+# Defines firewall rules for the DMS Replication Instance.
+# It must be able to reach the RDS source and be reached by admins (if needed).
 resource "aws_security_group" "dms" {
   name        = "${var.project_name}-${var.environment}-dms-sg"
   description = "Security group for DMS replication instance"
   vpc_id      = var.vpc_id
 
+  # Allow all internal traffic within the SG for management/coordination
   ingress {
     from_port   = 0
     to_port     = 0
@@ -11,13 +16,15 @@ resource "aws_security_group" "dms" {
     self        = true
   }
 
+  # Allow traffic from the entire VPC CIDR for connectivity to endpoints
   ingress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["10.0.0.0/16"] # Entire VPC
+    cidr_blocks = ["10.0.0.0/16"] 
   }
 
+  # Allow all outbound traffic to reach RDS and S3/Secrets Manager endpoints
   egress {
     from_port   = 0
     to_port     = 0
@@ -30,6 +37,10 @@ resource "aws_security_group" "dms" {
   }
 }
 
+# ===================================================================
+# DMS Subnet Group - Multi-AZ Deployment
+# ===================================================================
+# Defines which subnets DMS can use. We use private subnets for security.
 resource "aws_dms_replication_subnet_group" "main" {
   replication_subnet_group_id          = "${var.project_name}-${var.environment}-dms-subnet-group"
   replication_subnet_group_description = "DMS subnet group"
@@ -40,10 +51,14 @@ resource "aws_dms_replication_subnet_group" "main" {
   }
 }
 
+# ===================================================================
+# DMS Replication Instance - The CDC Engine
+# ===================================================================
+# The compute resource that executes the migration task and captures changes.
 resource "aws_dms_replication_instance" "main" {
   replication_instance_id    = "${var.project_name}-${var.environment}-dms-instance"
-  replication_instance_class = "dms.t3.medium"
-  allocated_storage          = 20
+  replication_instance_class = "dms.t3.medium" # Minimum class for stable CDC
+  allocated_storage          = 20 # Storage for logs and swap space
   
   replication_subnet_group_id = aws_dms_replication_subnet_group.main.id
   vpc_security_group_ids      = [aws_security_group.dms.id]
@@ -53,13 +68,18 @@ resource "aws_dms_replication_instance" "main" {
   }
 }
 
-# Source Endpoint (RDS MySQL)
+# ===================================================================
+# DMS Source Endpoint - RDS MySQL
+# ===================================================================
+# Connects DMS to the source database. 
+# Uses Secrets Manager for credential retrieval.
 resource "aws_dms_endpoint" "source" {
   endpoint_id   = "${var.project_name}-${var.environment}-source-endpoint"
   endpoint_type = "source"
   engine_name   = "mysql"
   
-  secrets_manager_arn = var.source_secret_arn
+  # Security/Auth: Fetch connection info directly from Secrets Manager
+  secrets_manager_arn             = var.source_secret_arn
   secrets_manager_access_role_arn = aws_iam_role.dms_secrets_role.arn
 
   tags = {
@@ -67,10 +87,14 @@ resource "aws_dms_endpoint" "source" {
   }
 }
 
-# Role for DMS to access Secrets Manager
+# ===================================================================
+# IAM Role for DMS - Secrets Manager Access
+# ===================================================================
+# Allows DMS to assume a role to read the RDS credentials.
 resource "aws_iam_role" "dms_secrets_role" {
   name = "${var.project_name}-${var.environment}-dms-secrets-role"
 
+  # Trust Policy: Specifically includes regional principal for ca-central-1
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -87,11 +111,8 @@ resource "aws_iam_role" "dms_secrets_role" {
     ]
   })
 }
-# Wait, I didn't pass aws_region to this module. I generally shouldn't rely on it too much.
-# Usually Service is just "dms.amazonaws.com" but for endpoints it can be region specific.
-# Actually for DMS service principal "dms.amazonaws.com" is usually fine. I will fix the header later.
-# For now, let's fix the role.
 
+# IAM Policy for Secrets Retrieval
 resource "aws_iam_policy" "dms_secrets_policy" {
   name = "${var.project_name}-${var.environment}-dms-secrets-policy"
   policy = jsonencode({
@@ -111,19 +132,22 @@ resource "aws_iam_role_policy_attachment" "dms_secrets_attach" {
   policy_arn = aws_iam_policy.dms_secrets_policy.arn
 }
 
-
-# Target Endpoint (S3)
+# ===================================================================
+# DMS Target Endpoint - S3 (Bronze Layer)
+# ===================================================================
+# Connects DMS to the S3 bucket to land raw data as CSV.
 resource "aws_dms_endpoint" "target" {
   endpoint_id   = "${var.project_name}-${var.environment}-target-endpoint"
   endpoint_type = "target"
   engine_name   = "s3"
   
+  # Landing Zone Settings
   s3_settings {
     bucket_name             = var.target_bucket_name
-    bucket_folder           = "bronze" # As per notes: "Data will be stored in csv format in bronze folder"
+    bucket_folder           = "bronze" # Raw data lands here
     service_access_role_arn = aws_iam_role.dms_s3_role.arn
     data_format             = "csv"
-    timestamp_column_name   = "db_timestamp"
+    timestamp_column_name   = "db_timestamp" # Metadata column for CDC tracking
   }
 
   tags = {
@@ -131,10 +155,14 @@ resource "aws_dms_endpoint" "target" {
   }
 }
 
-# Role for DMS to access S3
+# ===================================================================
+# IAM Role for DMS - S3 Bucket Access
+# ===================================================================
+# Allows DMS to write files into the Data Lake.
 resource "aws_iam_role" "dms_s3_role" {
   name = "${var.project_name}-${var.environment}-dms-s3-role"
 
+  # Trust Policy: Includes regional principal to avoid assume-role errors
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -152,6 +180,7 @@ resource "aws_iam_role" "dms_s3_role" {
   })
 }
 
+# IAM Policy for S3 Data Archival
 resource "aws_iam_policy" "dms_s3_policy" {
   name = "${var.project_name}-${var.environment}-dms-s3-policy"
   policy = jsonencode({
@@ -178,8 +207,10 @@ resource "aws_iam_role_policy_attachment" "dms_s3_attach" {
   policy_arn = aws_iam_policy.dms_s3_policy.arn
 }
 
-
-# Replication Task
+# ===================================================================
+# RDS Ingress Rule for DMS
+# ===================================================================
+# Explicitly allows the DMS Security Group to reach RDS on port 3306.
 resource "aws_security_group_rule" "rds_ingress_dms" {
   type                     = "ingress"
   from_port                = 3306
@@ -188,9 +219,16 @@ resource "aws_security_group_rule" "rds_ingress_dms" {
   source_security_group_id = aws_security_group.dms.id
   security_group_id        = var.rds_security_group_id
 }
+
+# ===================================================================
+# DMS Replication Task - RDS to S3
+# ===================================================================
+# Replicates all tables from 'dev' schema using Full Load + CDC.
 resource "aws_dms_replication_task" "main" {
   replication_task_id      = "${var.project_name}-${var.environment}-replication-task"
-  migration_type           = "full-load-and-cdc" # "replicate data from the source to the target using CDC"
+  migration_type           = "full-load-and-cdc" # Capture initial data and ongoing changes
+  
+  # Table Selection: Include everything from 'dev' schema
   table_mappings           = jsonencode({
     rules = [
       {
@@ -210,11 +248,12 @@ resource "aws_dms_replication_task" "main" {
   source_endpoint_arn      = aws_dms_endpoint.source.endpoint_arn
   target_endpoint_arn      = aws_dms_endpoint.target.endpoint_arn
   
-  start_replication_task = false # Don't start automatically on creation usually
+  # Start manually after schema is ready (handled by null_resource in main.tf)
+  start_replication_task = false 
 
   replication_task_settings = jsonencode({
     Logging = {
-      EnableLogging = true
+      EnableLogging = true # Essential for debugging CDC issues
     }
   })
 

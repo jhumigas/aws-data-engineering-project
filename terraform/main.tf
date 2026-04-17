@@ -1,3 +1,7 @@
+# ===================================================================
+# VPC Module - Network Foundation
+# ===================================================================
+# Provisions the VPC, subnets, and endpoints required for the project.
 module "vpc" {
   source = "./modules/vpc"
 
@@ -8,6 +12,10 @@ module "vpc" {
   availability_zones = var.availability_zones
 }
 
+# ===================================================================
+# S3 Module - Data Lake Storage (Bronze/Silver/Gold)
+# ===================================================================
+# Provisions the S3 bucket and foundational folder structure.
 module "s3" {
   source = "./modules/s3"
 
@@ -15,29 +23,40 @@ module "s3" {
   environment  = var.environment
 }
 
+# ===================================================================
+# RDS Module - Source Transactional Database
+# ===================================================================
+# Provisions the MySQL database with CDC and backup retention enabled.
 module "rds" {
   source = "./modules/rds"
 
   project_name = var.project_name
   environment  = var.environment
   vpc_id       = module.vpc.vpc_id
-  subnet_ids   = module.vpc.public_subnet_ids
-  # allowed_security_group_ids passed if needed, or rely on internal rules
+  subnet_ids   = module.vpc.public_subnet_ids # RDS deployed in public for demo ease
 }
 
+# ===================================================================
+# DMS Module - CDC Replication Engine
+# ===================================================================
+# Orchestrates data movement from RDS (MySQL) to S3 (Bronze).
 module "dms" {
   source = "./modules/dms"
 
   project_name          = var.project_name
   environment           = var.environment
   vpc_id                = module.vpc.vpc_id
-  subnet_ids            = module.vpc.private_subnet_ids # DMS typically in private
+  subnet_ids            = module.vpc.private_subnet_ids # DMS workers in private subnets
   source_secret_arn     = module.rds.secret_arn
   rds_security_group_id = module.rds.security_group_id
   target_bucket_name    = module.s3.bucket_id
   aws_region            = var.aws_region
 }
 
+# ===================================================================
+# Lambda Module - Data Generation Utility
+# ===================================================================
+# Packages and deploys the Python generator to simulate live traffic.
 module "lambda" {
   source = "./modules/lambda"
 
@@ -50,6 +69,10 @@ module "lambda" {
   aws_region            = var.aws_region
 }
 
+# ===================================================================
+# Redshift Module - Data Warehouse
+# ===================================================================
+# Provisions the analytics cluster for final data modeling.
 module "redshift" {
   source = "./modules/redshift"
 
@@ -61,6 +84,10 @@ module "redshift" {
   bucket_arn   = module.s3.bucket_arn
 }
 
+# ===================================================================
+# Glue Module - Serverless ETL (Spark)
+# ===================================================================
+# Manages crawlers and jobs to transform data from Bronze to Silver.
 module "glue" {
   source = "./modules/glue"
 
@@ -74,6 +101,10 @@ module "glue" {
   redshift_security_group_id = module.redshift.redshift_security_group_id
 }
 
+# ===================================================================
+# Step Functions Module - ETL Orchestrator
+# ===================================================================
+# Defines the state machine to run Glue jobs in sequence.
 module "step_functions" {
   source = "./modules/step_functions"
 
@@ -82,6 +113,11 @@ module "step_functions" {
   glue_job_names = module.glue.job_names
 }
 
+# ===================================================================
+# Database Migration Task - Flyway Orchestration
+# ===================================================================
+# Automatically runs SQL migrations to set up the RDS schema.
+# Triggers on any change to the .sql files in the migration directory.
 resource "null_resource" "db_migration" {
   depends_on = [module.rds]
 
@@ -101,6 +137,10 @@ resource "null_resource" "db_migration" {
   }
 }
 
+# ===================================================================
+# DMS Automation - Replication Task Startup
+# ===================================================================
+# Automatically starts the DMS task once the RDS schema is ready.
 resource "null_resource" "start_dms_task" {
   depends_on = [null_resource.db_migration, module.dms]
 
@@ -109,6 +149,10 @@ resource "null_resource" "start_dms_task" {
   }
 }
 
+# ===================================================================
+# Data Generator Trigger - Initial Load
+# ===================================================================
+# One-time invocation of the Lambda generator to seed the database.
 resource "null_resource" "trigger_generator" {
   depends_on = [null_resource.start_dms_task, module.lambda]
 
@@ -117,6 +161,10 @@ resource "null_resource" "trigger_generator" {
   }
 }
 
+# ===================================================================
+# S3 Bucket Policy - Centralized Access Control
+# ===================================================================
+# Grants Glue, DMS, and Redshift permissions to interact with the Data Lake.
 resource "aws_s3_bucket_policy" "bucket_access" {
   bucket = module.s3.bucket_id
 
