@@ -1,8 +1,13 @@
+# ===================================================================
+# Lambda Security Group - Network Isolation
+# ===================================================================
+# Provides network access for the Lambda function within the VPC.
 resource "aws_security_group" "lambda" {
   name        = "${var.project_name}-${var.environment}-lambda-sg"
   description = "Security group for Lambda function"
   vpc_id      = var.vpc_id
 
+  # Outbound Rule: Allow all traffic to communicate with RDS and AWS Services
   egress {
     from_port   = 0
     to_port     = 0
@@ -15,9 +20,10 @@ resource "aws_security_group" "lambda" {
   }
 }
 
-# Allow Lambda to access RDS (Updating RDS SG rule here or in RDS module? 
-# Usually better to do it via a separate rule or referencing SG IDs.
-# I'll create a rule here attached to the RDS SG to allow this Lambda SG)
+# ===================================================================
+# RDS Ingress Rule for Lambda
+# ===================================================================
+# Allows the Lambda function to connect to the MySQL database.
 resource "aws_security_group_rule" "rds_ingress_lambda" {
   type                     = "ingress"
   from_port                = 3306
@@ -27,12 +33,17 @@ resource "aws_security_group_rule" "rds_ingress_lambda" {
   security_group_id        = var.rds_security_group_id
 }
 
+# ===================================================================
+# Lambda Build Process - Dependency Packaging
+# ===================================================================
+# Uses 'uv' to package Python dependencies for a Linux environment.
+# Ensures that 'mysql-connector-python' and 'Faker' are available in the runtime.
 resource "null_resource" "lambda_build" {
   triggers = {
+    # Re-run build if any source file or dependency list changes
     pyproject = filemd5("${path.module}/../../../data_generator_lambda/pyproject.toml")
     lock      = filemd5("${path.module}/../../../data_generator_lambda/uv.lock")
     handler   = filemd5("${path.module}/../../../data_generator_lambda/lambda_function.py")
-    fix       = "3" # Force re-run
   }
 
   provisioner "local-exec" {
@@ -40,6 +51,7 @@ resource "null_resource" "lambda_build" {
       cd ${path.module}/../../../data_generator_lambda
       rm -rf build
       mkdir -p build
+      # Targeted install for AWS Lambda's architecture (x86_64 Linux)
       uv pip install \
         --no-installer-metadata \
         --no-compile-bytecode \
@@ -52,6 +64,7 @@ resource "null_resource" "lambda_build" {
   }
 }
 
+# Archive the build directory into a ZIP file for upload
 data "archive_file" "lambda_zip" {
   depends_on  = [null_resource.lambda_build]
   type        = "zip"
@@ -59,14 +72,19 @@ data "archive_file" "lambda_zip" {
   output_path = "${path.module}/lambda_function.zip"
 }
 
+# ===================================================================
+# AWS Lambda Function - Data Generator
+# ===================================================================
+# Simulates application traffic by inserting/updating data in RDS.
 resource "aws_lambda_function" "data_generator" {
   filename      = data.archive_file.lambda_zip.output_path
   function_name = "${var.project_name}-${var.environment}-data-generator"
   role          = aws_iam_role.lambda_role.arn
   handler       = "lambda_function.lambda_handler" 
-  runtime       = "python3.13" # Match the file info if possible, or leave as latest
-  timeout       = 300 # 5 minutes
+  runtime       = "python3.13"
+  timeout       = 300 # 5 minute execution limit
 
+  # VPC Configuration: Runs in private subnets for DB access
   vpc_config {
     subnet_ids         = var.subnet_ids
     security_group_ids = [aws_security_group.lambda.id]
@@ -74,9 +92,10 @@ resource "aws_lambda_function" "data_generator" {
 
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
+  # Environment Variables for DB Connectivity
   environment {
     variables = {
-      SECRET_NAME = var.rds_secret_arn # The code uses getenv("SECRET_NAME")
+      SECRET_NAME = var.rds_secret_arn
       REGION_NAME = var.aws_region
     }
   }
@@ -86,6 +105,10 @@ resource "aws_lambda_function" "data_generator" {
   }
 }
 
+# ===================================================================
+# IAM Role for Lambda - Execution Permissions
+# ===================================================================
+# Defines what AWS resources the Lambda can interact with.
 resource "aws_iam_role" "lambda_role" {
   name = "${var.project_name}-${var.environment}-lambda-role"
 
@@ -103,6 +126,7 @@ resource "aws_iam_role" "lambda_role" {
   })
 }
 
+# IAM Policy: Secrets Manager, VPC Access, and CloudWatch Logs
 resource "aws_iam_policy" "lambda_policy" {
   name = "${var.project_name}-${var.environment}-lambda-policy"
   policy = jsonencode({
@@ -110,9 +134,7 @@ resource "aws_iam_policy" "lambda_policy" {
     Statement = [
       {
         Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-        ]
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [var.rds_secret_arn]
       },
       {
@@ -122,7 +144,7 @@ resource "aws_iam_policy" "lambda_policy" {
           "ec2:DescribeNetworkInterfaces",
           "ec2:DeleteNetworkInterface"
         ]
-        Resource = "*" # VPC privileges needed
+        Resource = "*"
       },
       {
         Effect = "Allow"
@@ -142,7 +164,10 @@ resource "aws_iam_role_policy_attachment" "lambda_attach" {
   policy_arn = aws_iam_policy.lambda_policy.arn
 }
 
-# EventBridge Schedule
+# ===================================================================
+# EventBridge Schedule - Automated Triggering
+# ===================================================================
+# Automatically triggers the Lambda every 5 minutes to simulate load.
 resource "aws_cloudwatch_event_rule" "schedule" {
   name                = "${var.project_name}-${var.environment}-data-gen-schedule"
   description         = "Schedule for data generation"
@@ -155,6 +180,7 @@ resource "aws_cloudwatch_event_target" "lambda_target" {
   arn       = aws_lambda_function.data_generator.arn
 }
 
+# Grant EventBridge permission to invoke the Lambda
 resource "aws_lambda_permission" "allow_cloudwatch" {
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
