@@ -143,9 +143,23 @@ git commit -m "feat: automate dms start and initial data generation"
 
 ### Task 5: Verification
 
-- [ ] **Step 1: Run Terraform Apply**
-Run: `cd terraform && terraform apply -auto-approve`
+- [ ] **Step 1: Run Targeted Terraform Apply**
+Run: 
+```bash
+cd terraform && terraform apply \
+  -target=module.vpc \
+  -target=module.s3 \
+  -target=module.rds \
+  -target=module.dms \
+  -target=module.lambda \
+  -target=null_resource.db_migration \
+  -target=null_resource.start_dms_task \
+  -target=null_resource.trigger_generator \
+  -auto-approve
+```
+Expected: Infrastructure created, Flyway migrations run, DMS task starts, and Lambda is invoked.
 
 - [ ] **Step 2: Verify S3 Landing**
-Run: `aws s3 ls s3://<bucket-name>/bronze/dev/`
+Wait 2-3 minutes for DMS to replicate.
+Run: `aws s3 ls s3://$(terraform output -raw bucket_name)/bronze/dev/`
 Expected: Folders for Customer, Product, etc. with .csv files.

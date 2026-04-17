@@ -17,3 +17,7 @@ output "database_name" {
 output "cluster_identifier" {
   value = aws_redshift_cluster.main.cluster_identifier
 }
+
+output "role_arn" {
+  value = aws_iam_role.redshift_role.arn
+}

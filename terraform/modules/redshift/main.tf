@@ -77,7 +77,7 @@ resource "aws_iam_role_policy_attachment" "redshift_s3_attach" {
 resource "random_password" "password" {
   length           = 16
   special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+  override_special = "!#$%&*()-_=+"
 }
 
 resource "aws_redshift_cluster" "main" {
@@ -85,7 +85,7 @@ resource "aws_redshift_cluster" "main" {
   database_name      = "dev" # Default DB name
   master_username    = "adminuser"
   master_password    = random_password.password.result
-  node_type          = "dc2.large" # Smallest single node type usually
+  node_type          = "ra3.large" # Changed for availability
   cluster_type       = "single-node"
   
   cluster_subnet_group_name = aws_redshift_subnet_group.main.name

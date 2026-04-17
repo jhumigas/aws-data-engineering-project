@@ -32,6 +32,7 @@ resource "null_resource" "lambda_build" {
     pyproject = filemd5("${path.module}/../../../data_generator_lambda/pyproject.toml")
     lock      = filemd5("${path.module}/../../../data_generator_lambda/uv.lock")
     handler   = filemd5("${path.module}/../../../data_generator_lambda/lambda_function.py")
+    fix       = "3" # Force re-run
   }
 
   provisioner "local-exec" {
@@ -39,11 +40,13 @@ resource "null_resource" "lambda_build" {
       cd ${path.module}/../../../data_generator_lambda
       rm -rf build
       mkdir -p build
-      uv pip install . \
+      uv pip install \
+        --no-installer-metadata \
+        --no-compile-bytecode \
+        --python-platform x86_64-manylinux2014 \
+        --python 3.13 \
         --target build/ \
-        --python-platform x86_64-unknown-linux-gnu \
-        --python-version 3.9 \
-        --only-binary=:all:
+        -r pyproject.toml
       cp lambda_function.py build/
     EOT
   }
@@ -61,7 +64,7 @@ resource "aws_lambda_function" "data_generator" {
   function_name = "${var.project_name}-${var.environment}-data-generator"
   role          = aws_iam_role.lambda_role.arn
   handler       = "lambda_function.lambda_handler" 
-  runtime       = "python3.9" # Match the file info if possible, or leave as latest
+  runtime       = "python3.13" # Match the file info if possible, or leave as latest
   timeout       = 300 # 5 minutes
 
   vpc_config {

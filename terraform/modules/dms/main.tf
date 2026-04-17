@@ -4,6 +4,20 @@ resource "aws_security_group" "dms" {
   description = "Security group for DMS replication instance"
   vpc_id      = var.vpc_id
 
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
+  }
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["10.0.0.0/16"] # Entire VPC
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -28,7 +42,7 @@ resource "aws_dms_replication_subnet_group" "main" {
 
 resource "aws_dms_replication_instance" "main" {
   replication_instance_id    = "${var.project_name}-${var.environment}-dms-instance"
-  replication_instance_class = "dms.t2.micro" # Free tier eligible often
+  replication_instance_class = "dms.t3.medium"
   allocated_storage          = 20
   
   replication_subnet_group_id = aws_dms_replication_subnet_group.main.id
@@ -64,7 +78,10 @@ resource "aws_iam_role" "dms_secrets_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "dms.amazonaws.com"
+          Service = [
+            "dms.amazonaws.com",
+            "dms.${var.aws_region}.amazonaws.com"
+          ]
         }
       }
     ]
@@ -102,10 +119,11 @@ resource "aws_dms_endpoint" "target" {
   engine_name   = "s3"
   
   s3_settings {
-    bucket_name = var.target_bucket_name
-    bucket_folder = "bronze" # As per notes: "Data will be stored in csv format in bronze folder"
+    bucket_name             = var.target_bucket_name
+    bucket_folder           = "bronze" # As per notes: "Data will be stored in csv format in bronze folder"
     service_access_role_arn = aws_iam_role.dms_s3_role.arn
-    data_format = "csv"
+    data_format             = "csv"
+    timestamp_column_name   = "db_timestamp"
   }
 
   tags = {
@@ -124,7 +142,10 @@ resource "aws_iam_role" "dms_s3_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "dms.amazonaws.com"
+          Service = [
+            "dms.amazonaws.com",
+            "dms.${var.aws_region}.amazonaws.com"
+          ]
         }
       }
     ]
@@ -190,6 +211,12 @@ resource "aws_dms_replication_task" "main" {
   target_endpoint_arn      = aws_dms_endpoint.target.endpoint_arn
   
   start_replication_task = false # Don't start automatically on creation usually
+
+  replication_task_settings = jsonencode({
+    Logging = {
+      EnableLogging = true
+    }
+  })
 
   tags = {
     Name = "${var.project_name}-${var.environment}-replication-task"

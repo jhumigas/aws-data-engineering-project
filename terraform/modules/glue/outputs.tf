@@ -5,3 +5,7 @@ output "job_names" {
 output "crawler_names" {
   value = [aws_glue_crawler.bronze.name]
 }
+
+output "role_arn" {
+  value = aws_iam_role.glue_role.arn
+}

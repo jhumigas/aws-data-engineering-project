@@ -1,7 +1,7 @@
 resource "random_password" "password" {
   length           = 16
   special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+  override_special = "!#$%&*()-_=+"
 }
 
 resource "aws_db_subnet_group" "main" {
@@ -21,12 +21,19 @@ resource "aws_security_group" "rds" {
   # Allow ingress from allowed SGs (e.g., Lambda, DMS)
   # And also from anywhere for demo purposes if publicly accessible as per notes
   ingress {
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    cidr_blocks     = ["0.0.0.0/0"] # Caution: Allowing all for demo/walkthrough testing
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Caution: Allowing all for demo/walkthrough testing
   }
-  
+
+  ingress {
+    from_port = 3306
+    to_port   = 3306
+    protocol  = "tcp"
+    self      = true
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -51,7 +58,12 @@ resource "aws_db_parameter_group" "mysql_cdc" {
 
   parameter {
     name  = "binlog_row_image"
-    value = "FULL"
+    value = "Full"
+  }
+
+  parameter {
+    name  = "binlog_checksum"
+    value = "NONE"
   }
 }
 
@@ -65,12 +77,13 @@ resource "aws_db_instance" "main" {
   username          = "admin"
   password          = var.db_password != null ? var.db_password : random_password.password.result
   db_name           = "dev"
-  
-  parameter_group_name   = aws_db_parameter_group.mysql_cdc.name
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
-  skip_final_snapshot    = true
-  publicly_accessible    = true # Enabled as per notes for local testing
+
+  parameter_group_name    = aws_db_parameter_group.mysql_cdc.name
+  db_subnet_group_name    = aws_db_subnet_group.main.name
+  vpc_security_group_ids  = [aws_security_group.rds.id]
+  skip_final_snapshot     = true
+  publicly_accessible     = true # Enabled as per notes for local testing
+  backup_retention_period = 1
 
   tags = {
     Name = "${var.project_name}-${var.environment}-mysql"
@@ -79,12 +92,12 @@ resource "aws_db_instance" "main" {
 
 # Secrets Manager
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name = "${var.project_name}/${var.environment}/mysql-credentials"
-  recovery_window_in_days = 0 
+  name                    = "${var.project_name}/${var.environment}/mysql-credentials"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "db_credentials" {
-  secret_id     = aws_secretsmanager_secret.db_credentials.id
+  secret_id = aws_secretsmanager_secret.db_credentials.id
   secret_string = jsonencode({
     username = aws_db_instance.main.username
     password = aws_db_instance.main.password
