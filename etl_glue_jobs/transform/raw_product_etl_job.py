@@ -13,34 +13,35 @@ from awsglue.dynamicframe import DynamicFrame
 from awsglue.utils import getResolvedOptions
 from awsglue.job import Job
 
-#initialize all the variables needed
-source_bucket = ""
-folder_name = "bronze_data"
-processed_folder_name = "silver_data"
-db_name = "dev"
+# Get arguments from Job
+args = getResolvedOptions(sys.argv, ["JOB_NAME", "SOURCE_BUCKET", "GLUE_DATABASE", "TARGET_PREFIX"])
+
+# Initialize variables from args
+source_bucket = args['SOURCE_BUCKET']
+glue_database = args['GLUE_DATABASE']
+target_prefix = args['TARGET_PREFIX'] # e.g. "silver/dev"
 table_name = "Product"
+glue_table_name = "product" # Lowercase matching crawler convention
 
-# Set up catalog parameters
-glue_database = "data-engineering-project-glue-database"
-glue_table_name = "raw_data_product"
-
-#set up the spark contexts, glue contexts and initialize job
+# set up contexts
 sc = SparkContext.getOrCreate()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)  
-args = getResolvedOptions(sys.argv, ["JOB_NAME"])
 job.init(args['JOB_NAME'], args)
 
-
-#Create a dataframe from the catalog
-products_df_from_catalog = glueContext.create_data_frame_from_catalog(glue_database, glue_table_name,additional_options = {"useCatalogSchema": True}, transformation_ctx = "products_df_from_catalog" )
+# Create a dataframe from the catalog
+products_df_from_catalog = glueContext.create_data_frame_from_catalog(
+    database = glue_database,
+    table_name = glue_table_name,
+    additional_options = {"useCatalogSchema": True},
+    transformation_ctx = "products_df_from_catalog"
+)
 
 # Check if the DataFrame has records before processing
 if products_df_from_catalog.count() > 0:
     
-    
-    #Create a new dataframe and rename the existing columns to use snake-case
+    # Create a new dataframe and rename the existing columns to use snake-case
     renamed_products = products_df_from_catalog.withColumnRenamed("productid","product_id")\
                         .withColumnRenamed("op", "cdc_operation")\
                         .withColumnRenamed("productname","product_name")\
@@ -49,7 +50,7 @@ if products_df_from_catalog.count() > 0:
                         .withColumnRenamed("price","product_price")\
                         .withColumnRenamed("productcategory","product_category")
 
-    #Create a function to generate hash value from all variable columns in the product dimension
+    # Create a function to generate hash value from all variable columns in the product dimension
     concatenated_product_fields = concat_ws(''\
                                         , col("product_name")\
                                         , col("brand_name")\
@@ -57,33 +58,30 @@ if products_df_from_catalog.count() > 0:
                                         , col("product_price")\
                                         , col("product_category"))
 
-    #Create default values and timestamp for the new columns
-
+    # Create default values and timestamp for the new columns
     current_ts = current_timestamp()
-    current_date = current_date()
-
     record_end_ts = lit('9999-12-31').cast(TimestampType())
     active_flag = lit(1)
 
-    # Create new dataframw with new columns using withColumn() and round the price to 2 decimal places
+    # Create new dataframe with new columns using withColumn() and round the price to 2 decimal places
     product_final_df = renamed_products.withColumn("hash_value",sha2(concatenated_product_fields, 256))\
                         .withColumn("record_start_ts",current_ts)\
                         .withColumn("record_end_ts",record_end_ts)\
-                        .withColumn("ingestion_date",current_date)\
+                        .withColumn("ingestion_date",current_date())\
                         .withColumn("active_flag",active_flag)\
                         .withColumn("product_price",round(col("product_price"),2))
 
-
-    #Convert to dataframe to glue Dynamic Frame
+    # Convert to dataframe to glue Dynamic Frame
     product_final_dyf = DynamicFrame.fromDF(product_final_df,glueContext,"product_final_dyf")  	
 
-    #Write transformed data back to Amazon S3 in parquet format
+    # Write transformed data back to Amazon S3 in parquet format
     glueContext.write_dynamic_frame.from_options(
         frame = product_final_dyf,
         connection_type = "s3",    
-        connection_options = {"path": "s3://" + source_bucket +"/"+processed_folder_name+"/"+db_name+"/"+table_name+"/", "partitionKeys": ["ingestion_date"]},
-       format = "parquet",transformation_ctx = "products_dyf_to_S3")
-
+        connection_options = {"path": f"s3://{source_bucket}/{target_prefix}/{table_name}/", "partitionKeys": ["ingestion_date"]},
+        format = "parquet",
+        transformation_ctx = "products_dyf_to_S3"
+    )
 
 else:
     print("No records found in the source data. Skipping further processing.")

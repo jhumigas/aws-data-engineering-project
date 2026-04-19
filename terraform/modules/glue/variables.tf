@@ -29,3 +29,7 @@ variable "redshift_secret_arn" {
 variable "redshift_security_group_id" {
   type = string
 }
+
+variable "redshift_endpoint" {
+  type = string
+}

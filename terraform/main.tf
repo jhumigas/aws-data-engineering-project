@@ -99,6 +99,7 @@ module "glue" {
   bucket_name                = module.s3.bucket_id
   redshift_secret_arn        = module.redshift.redshift_secret_arn
   redshift_security_group_id = module.redshift.redshift_security_group_id
+  redshift_endpoint          = module.redshift.redshift_endpoint
 }
 
 # ===================================================================
@@ -108,9 +109,12 @@ module "glue" {
 module "step_functions" {
   source = "./modules/step_functions"
 
-  project_name   = var.project_name
-  environment    = var.environment
-  glue_job_names = module.glue.job_names
+  project_name                = var.project_name
+  environment                 = var.environment
+  glue_job_names              = module.glue.job_names_map
+  glue_crawler_names          = module.glue.crawler_names
+  redshift_cluster_identifier = module.redshift.cluster_identifier
+  redshift_database           = module.redshift.database_name
 }
 
 # ===================================================================
