@@ -6,18 +6,16 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
 - **Terraform** installed (v1.0+).
 - **AWS CLI** configured with appropriate credentials (`aws configure`).
 - **Python 3.x** and **uv** (for Lambda and Glue job packaging).
-
 ## Deployment Steps
 
-1. **Navigate to the Terraform directory**:
+1. **Navigate to the Project root**:
    ```bash
-   cd terraform
+   cd ..
    ```
 
 2. **Initialize and Apply**:
    ```bash
-   terraform init
-   terraform apply -auto-approve
+   cd terraform && terraform init && terraform apply -auto-approve
    ```
 
    > [!NOTE]
@@ -30,30 +28,34 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    ```
 
 4. **Initialize Redshift Schema**:
-   Since the cluster is private, use the Data API to establish the `sales` schema:
+   Use the Makefile to establish the `sales` schema:
    ```bash
-   aws redshift-data execute-statement \
-     --cluster-identifier aws-de-project-dev-redshift \
-     --database dev \
-     --db-user adminuser \
-     --sql "CREATE SCHEMA IF NOT EXISTS sales;" \
-     --region ca-central-1
+   make setup-rds
    ```
-   *Note: Initialize all tables and procedures from `data_warehouse_redshift/ddl/` and `stored_procedures/` using this method.*
 
-5. **Trigger the Pipeline**:
-   Start the Step Functions state machine to run the end-to-end flow:
+5. **Discover Schema**:
+   Run the Glue Crawlers to discover the schema from the Bronze S3 folders:
    ```bash
-   aws stepfunctions start-execution \
-     --state-machine-arn $(terraform output -raw state_machine_arn) \
-     --region ca-central-1
+   for crawler in aws-de-project-dev-crawler-Customer aws-de-project-dev-crawler-Orders aws-de-project-dev-crawler-Product aws-de-project-dev-crawler-orderDetails; do
+     aws glue start-crawler --name $crawler --region ca-central-1
+   done
    ```
+   *Note: Wait for all crawlers to show a status of 'READY' before proceeding.*
+
+6. **Trigger the Data Pipeline**:
+   Start the pipeline using the Makefile:
+   ```bash
+   make trigger-dms
+   make trigger-lambda
+   make trigger-pipeline
+   ```
+
+
 
 ## Verification
 
 1. **Monitor Step Functions**: 
    Check the execution status in the AWS Console. The pipeline will:
-   - Run Crawlers to discover schema.
    - Run Spark Jobs to transform CSV to Parquet.
    - Load data into Redshift Staging.
    - Run Stored Procedures for SCD Type 2 merge.

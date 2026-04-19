@@ -19,7 +19,7 @@ resource "aws_iam_role" "sfn_role" {
   })
 }
 
-# custom policy for Glue and Redshift interaction
+# Custom policy for Glue and Redshift interaction
 resource "aws_iam_policy" "sfn_policy" {
   name = "${var.project_name}-${var.environment}-sfn-policy"
   policy = jsonencode({
@@ -29,9 +29,7 @@ resource "aws_iam_policy" "sfn_policy" {
         Effect = "Allow"
         Action = [
           "glue:StartJobRun",
-          "glue:GetJobRun",
-          "glue:StartCrawler",
-          "glue:GetCrawler"
+          "glue:GetJobRun"
         ]
         Resource = "*"
       },
@@ -43,6 +41,13 @@ resource "aws_iam_policy" "sfn_policy" {
           "redshift-data:GetStatementResult"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "redshift:GetClusterCredentials"
+        ]
+        Resource = ["*"]
       }
     ]
   })
@@ -56,110 +61,98 @@ resource "aws_iam_role_policy_attachment" "sfn_attach" {
 # ===================================================================
 # Step Functions State Machine - ETL Orchestrator
 # ===================================================================
-# Coordinates the sequential flow: Discovery -> Transform -> Load -> Merge.
+# Coordinates: Parallel Dimension Load/Merge -> Parallel Fact Load
 resource "aws_sfn_state_machine" "main" {
   name     = "${var.project_name}-${var.environment}-state-machine"
   role_arn = aws_iam_role.sfn_role.arn
 
   definition = jsonencode({
-    Comment = "Orchestrate Glue Discovery, Transform, and Redshift Load"
-    StartAt = "StartCrawlers"
+    Comment = "Orchestrate Glue ETL and Redshift Merge"
+    StartAt = "Parallel_Load_Dimensions"
     States = {
-      # 1. Parallel Discovery of raw Bronze data
-      StartCrawlers = {
+      # 1. Parallel Load/Merge Dimensions
+      Parallel_Load_Dimensions = {
         Type = "Parallel"
-        Next = "WaitForCrawlers"
+        Next = "Parallel_Load_Facts"
         Branches = [
-          for crawler in var.glue_crawler_names : {
-            StartAt = "Run_${crawler}"
+          {
+            StartAt = "Glue_Transform_Load_Customer"
             States = {
-              "Run_${crawler}" = {
+              Glue_Transform_Load_Customer = {
                 Type     = "Task"
-                Resource = "arn:aws:states:::aws-sdk:glue:startCrawler"
-                Parameters = { "Name": crawler }
-                End      = true
+                Resource = "arn:aws:states:::glue:startJobRun.sync"
+                Parameters = { "JobName": var.glue_job_names["load_processed_customers"] }
+                Next = "SP_Merge_Customer"
+              }
+              SP_Merge_Customer = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:redshiftdata:executeStatement"
+                Parameters = {
+                  ClusterIdentifier = var.redshift_cluster_identifier
+                  Database          = var.redshift_database
+                  DbUser            = "adminuser"
+                  Sql               = "CALL sales.sp_merge_dim_customer();"
+                }
+                End = true
+              }
+            }
+          },
+          {
+            StartAt = "Glue_Transform_Load_Product"
+            States = {
+              Glue_Transform_Load_Product = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::glue:startJobRun.sync"
+                Parameters = { "JobName": var.glue_job_names["load_processed_products"] }
+                Next = "SP_Merge_Product"
+              }
+              SP_Merge_Product = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:redshiftdata:executeStatement"
+                Parameters = {
+                  ClusterIdentifier = var.redshift_cluster_identifier
+                  Database          = var.redshift_database
+                  DbUser            = "adminuser"
+                  Sql               = "CALL sales.sp_merge_dim_product();"
+                }
+                End = true
               }
             }
           }
         ]
       }
 
-      # 2. Wait for Crawlers to finish discovering schema
-      WaitForCrawlers = {
-        Type    = "Wait"
-        Seconds = 300
-        Next    = "RunTransformJobs"
-      }
-
-      # 3. Parallel Transform (Bronze -> Silver Parquet)
-      RunTransformJobs = {
+      # 2. Parallel Load Facts (Orders, OrderDetails)
+      Parallel_Load_Facts = {
         Type = "Parallel"
-        Next = "RunLoadJobs"
+        End  = true
         Branches = [
-          for path, name in var.glue_job_names : {
-            StartAt = "Job_${name}"
+          {
+            StartAt = "Glue_Load_Orders"
             States = {
-              "Job_${name}" = {
+              Glue_Load_Orders = {
                 Type     = "Task"
                 Resource = "arn:aws:states:::glue:startJobRun.sync"
-                Parameters = { "JobName": name }
+                Parameters = { "JobName": var.glue_job_names["load_processed_orders"] }
                 End      = true
               }
             }
-          } if length(regexall("transform", path)) > 0
-        ]
-      }
-
-      # 4. Parallel Load (Silver -> Redshift Staging)
-      RunLoadJobs = {
-        Type = "Parallel"
-        Next = "MergeCustomerDim"
-        Branches = [
-          for path, name in var.glue_job_names : {
-            StartAt = "Job_${name}"
+          },
+          {
+            StartAt = "Glue_Load_OrderDetails"
             States = {
-              "Job_${name}" = {
+              Glue_Load_OrderDetails = {
                 Type     = "Task"
                 Resource = "arn:aws:states:::glue:startJobRun.sync"
-                Parameters = { "JobName": name }
+                Parameters = { "JobName": var.glue_job_names["load_processed_orderdetails"] }
                 End      = true
               }
             }
-          } if length(regexall("load", path)) > 0
+          }
         ]
-      }
-
-      # 5. Redshift SCD Type 2 Merge - Customer Dimension
-      MergeCustomerDim = {
-        Type = "Task"
-        Next = "MergeProductDim"
-        Resource = "arn:aws:states:::aws-sdk:redshiftdata:executeStatement"
-        Parameters = {
-          ClusterIdentifier = var.redshift_cluster_identifier
-          Database          = var.redshift_database
-          DbUser            = "adminuser"
-          Sql               = "CALL sales.sp_merge_dim_customer();"
-        }
-      }
-
-      # 6. Redshift SCD Type 2 Merge - Product Dimension
-      MergeProductDim = {
-        Type = "Task"
-        End = true
-        Resource = "arn:aws:states:::aws-sdk:redshiftdata:executeStatement"
-        Parameters = {
-          ClusterIdentifier = var.redshift_cluster_identifier
-          Database          = var.redshift_database
-          DbUser            = "adminuser"
-          Sql               = "CALL sales.sp_merge_dim_product();"
-        }
       }
     }
   })
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-state-machine"
-  }
 }
 
 # ===================================================================
