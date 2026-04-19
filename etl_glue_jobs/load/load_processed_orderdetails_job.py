@@ -6,17 +6,43 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from awsglue import DynamicFrame
 
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+# Get arguments from Job
+args = getResolvedOptions(sys.argv, [
+    'JOB_NAME', 
+    'SOURCE_BUCKET', 
+    'TARGET_PREFIX', 
+    'REDSHIFT_CONNECTION', 
+    'STAGING_TABLE', 
+    'TEMP_DIR'
+])
+
 sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
-# Script generated for node Amazon S3
-AmazonS3_node1757458918452 = glueContext.create_dynamic_frame.from_options(format_options={}, connection_type="s3", format="parquet", connection_options={"paths": ["s3://data-engineering-project-424254664937/silver_data/dev/orderDetails/"], "recurse": True}, transformation_ctx="AmazonS3_node1757458918452")
+# Read from Silver Layer S3
+source_path = f"s3://{args['SOURCE_BUCKET']}/{args['TARGET_PREFIX']}/orderDetails/"
+silver_node = glueContext.create_dynamic_frame.from_options(
+    format_options={}, 
+    connection_type="s3", 
+    format="parquet", 
+    connection_options={"paths": [source_path], "recurse": True}, 
+    transformation_ctx="silver_node"
+)
 
-# Script generated for node Amazon Redshift
-AmazonRedshift_node1757458967431 = glueContext.write_dynamic_frame.from_options(frame=AmazonS3_node1757458918452, connection_type="redshift", connection_options={"redshiftTmpDir": "s3://aws-glue-assets-424254664937-us-east-2/temporary/", "useConnectionProperties": "true", "dbtable": "sales.fact_order_details", "connectionName": "Redshift connection", "preactions": "CREATE TABLE IF NOT EXISTS sales.fact_order_details (order_details_id_ VARCHAR, order_id VARCHAR, product_id VARCHAR, product_quantity VARCHAR, ingestion_date DATE);"}, transformation_ctx="AmazonRedshift_node1757458967431")
+# Write to Redshift Staging Table
+redshift_node = glueContext.write_dynamic_frame.from_options(
+    frame=silver_node, 
+    connection_type="redshift", 
+    connection_options={
+        "redshiftTmpDir": args['TEMP_DIR'], 
+        "useConnectionProperties": "true", 
+        "dbtable": args['STAGING_TABLE'], 
+        "connectionName": args['REDSHIFT_CONNECTION']
+    }, 
+    transformation_ctx="redshift_node"
+)
 
 job.commit()

@@ -12,45 +12,44 @@ from awsglue.dynamicframe import DynamicFrame
 from awsglue.utils import getResolvedOptions
 from awsglue.job import Job
 
+# Get arguments from Job
+args = getResolvedOptions(sys.argv, ["JOB_NAME", "SOURCE_BUCKET", "GLUE_DATABASE", "TARGET_PREFIX"])
 
-#Initialize all the variables needed
-source_bucket = ""
-folder_name = "bronze_data"
-processed_folder_name = "silver_data"
-db_name = "dev"
+# Initialize variables from args
+source_bucket = args['SOURCE_BUCKET']
+glue_database = args['GLUE_DATABASE']
+target_prefix = args['TARGET_PREFIX'] # e.g. "silver/dev"
 table_name = "Orders"
+glue_table_name = "orders" # Lowercase matching crawler convention
 
-# Set up catalog parameters
-glue_database = "dataeng-glue-database"
-glue_table_name = "raw_data_orders"
-
-#set up the spark contexts, glue contexts and initialize job
+# set up contexts
 sc = SparkContext.getOrCreate()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)  
-args = getResolvedOptions(sys.argv, ["JOB_NAME"])
 job.init(args['JOB_NAME'], args)
 
-
-#Read data from data catalog
-orders_df_from_catalog = glueContext.create_data_frame_from_catalog(glue_database,\
-                            glue_table_name,additional_options = {"useCatalogSchema": True, "useSparkDataSource": True, "header":True},\
-                                transformation_ctx = "orders_df_from_catalog")
+# Read from Data Catalog
+orders_df_from_catalog = glueContext.create_data_frame_from_catalog(
+    database = glue_database,
+    table_name = glue_table_name,
+    additional_options = {"useCatalogSchema": True, "useSparkDataSource": True, "header":True},
+    transformation_ctx = "orders_df_from_catalog"
+)
 
 if orders_df_from_catalog.count() > 0 :
     
     orders_with_date = orders_df_from_catalog.withColumn("orderDate", to_date(col("orderDate").cast(DateType())))
 
-    #Create new dataframe for renamed fields
-    renamed_orders = orders_with_date.withColumnRenamed("orderid","order_id ")\
+    # Create new dataframe for renamed fields
+    renamed_orders = orders_with_date.withColumnRenamed("orderid","order_id")\
                         .withColumnRenamed("orderCustomerId","order_customer_id")\
                         .withColumnRenamed("orderDate","order_date")\
                         .withColumnRenamed("paymentMethod","payment_method")\
                         .withColumnRenamed("orderPlatform", "order_platform")\
                         .drop("op")
 
-    #create dataframe with new columns using withColumn()
+    # create dataframe with new columns
     orders_final_df = renamed_orders\
                         .withColumn("order_year", year(col("order_date")))\
                         .withColumn("order_year_pk", year(col("order_date")))\
@@ -58,19 +57,18 @@ if orders_df_from_catalog.count() > 0 :
                         .withColumn("ingestion_date", current_date())\
                         .orderBy(col("order_date").desc())
 
+    # create glue dynamicframe from the dataframe
+    orders_final_dyf = DynamicFrame.fromDF(orders_final_df,glueContext,"orders_final_dyf")  
 
-    #create glue dynamicframe from the dataframe
-    orders_final_dyf = DynamicFrame.fromDF(orders_final_df,glueContext,"product_final_dyf")  
-
-    #Write rows to S3 as Parquet
+    # Write rows to S3 as Parquet
     glueContext.write_dynamic_frame.from_options(
         frame = orders_final_dyf,
         connection_type = "s3",    
-        connection_options = {"path": f"s3://{source_bucket}/{processed_folder_name}/{db_name}/{table_name}/", "partitionKeys": ["order_year_pk"]},
+        connection_options = {"path": f"s3://{source_bucket}/{target_prefix}/{table_name}/", "partitionKeys": ["order_year_pk"]},
         format = "parquet",
         transformation_ctx = "orders_final_dyf"
     )
 else:
         print("No new records found in the source data. Skipping further processing.")
 
-job.commit()  
+job.commit()

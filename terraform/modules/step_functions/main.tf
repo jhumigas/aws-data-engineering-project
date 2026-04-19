@@ -1,4 +1,7 @@
-# IAM Role for Step Functions
+# ===================================================================
+# Step Functions IAM Role - Service Permissions
+# ===================================================================
+# Allows Step Functions to trigger Glue and Redshift Data API.
 resource "aws_iam_role" "sfn_role" {
   name = "${var.project_name}-${var.environment}-sfn-role"
 
@@ -16,6 +19,7 @@ resource "aws_iam_role" "sfn_role" {
   })
 }
 
+# custom policy for Glue and Redshift interaction
 resource "aws_iam_policy" "sfn_policy" {
   name = "${var.project_name}-${var.environment}-sfn-policy"
   policy = jsonencode({
@@ -26,10 +30,19 @@ resource "aws_iam_policy" "sfn_policy" {
         Action = [
           "glue:StartJobRun",
           "glue:GetJobRun",
-          "glue:GetJobRuns",
-          "glue:BatchStopJobRun"
+          "glue:StartCrawler",
+          "glue:GetCrawler"
         ]
-        Resource = "*" # Scope to specific jobs if possible, but * is simpler here
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "redshift-data:ExecuteStatement",
+          "redshift-data:DescribeStatement",
+          "redshift-data:GetStatementResult"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -40,43 +53,111 @@ resource "aws_iam_role_policy_attachment" "sfn_attach" {
   policy_arn = aws_iam_policy.sfn_policy.arn
 }
 
+# ===================================================================
+# Step Functions State Machine - ETL Orchestrator
+# ===================================================================
+# Coordinates the sequential flow: Discovery -> Transform -> Load -> Merge.
 resource "aws_sfn_state_machine" "main" {
   name     = "${var.project_name}-${var.environment}-state-machine"
   role_arn = aws_iam_role.sfn_role.arn
 
-  # Direct definition mostly, but should check if we can read from file. 
-  # Since I can't easily see the file content right now without a tool call, 
-  # I will define a simple sequential flow based on the requirement "run the Glue jobs in sequence".
-  # If I used templatefile, I'd need to know the specific JSON structure to inject names.
-  
   definition = jsonencode({
-    Comment = "Orchestrate Glue Jobs"
-    StartAt = length(var.glue_job_names) > 0 ? "DataIngestion" : "Done"
-    States = merge(
-      length(var.glue_job_names) > 0 ? {
-        DataIngestion = {
-          Type = "Task",
-          Resource = "arn:aws:states:::glue:startJobRun.sync",
-          Parameters = {
-            JobName = var.glue_job_names[0]
-          },
-          End = true
-        }
-      } : {},
-      {
-        Done = {
-          Type = "Succeed"
+    Comment = "Orchestrate Glue Discovery, Transform, and Redshift Load"
+    StartAt = "StartCrawlers"
+    States = {
+      # 1. Parallel Discovery of raw Bronze data
+      StartCrawlers = {
+        Type = "Parallel"
+        Next = "RunTransformJobs"
+        Branches = [
+          for crawler in var.glue_crawler_names : {
+            StartAt = "Run_${crawler}"
+            States = {
+              "Run_${crawler}" = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:glue:startCrawler"
+                Parameters = { "Name": crawler }
+                End      = true
+              }
+            }
+          }
+        ]
+      }
+
+      # 2. Parallel Transform (Bronze -> Silver Parquet)
+      RunTransformJobs = {
+        Type = "Parallel"
+        Next = "RunLoadJobs"
+        Branches = [
+          for path, name in var.glue_job_names : {
+            StartAt = "Job_${name}"
+            States = {
+              "Job_${name}" = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::glue:startJobRun.sync"
+                Parameters = { "JobName": name }
+                End      = true
+              }
+            }
+          } if length(regexall("transform", path)) > 0
+        ]
+      }
+
+      # 3. Parallel Load (Silver -> Redshift Staging)
+      RunLoadJobs = {
+        Type = "Parallel"
+        Next = "MergeCustomerDim"
+        Branches = [
+          for path, name in var.glue_job_names : {
+            StartAt = "Job_${name}"
+            States = {
+              "Job_${name}" = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::glue:startJobRun.sync"
+                Parameters = { "JobName": name }
+                End      = true
+              }
+            }
+          } if length(regexall("load", path)) > 0
+        ]
+      }
+
+      # 4. Redshift SCD Type 2 Merge - Customer Dimension
+      MergeCustomerDim = {
+        Type = "Task"
+        Next = "MergeProductDim"
+        Resource = "arn:aws:states:::aws-sdk:redshiftdata:executeStatement"
+        Parameters = {
+          ClusterIdentifier = var.redshift_cluster_identifier
+          Database          = var.redshift_database
+          DbUser            = "adminuser"
+          Sql               = "CALL sales.sp_merge_dim_customer();"
         }
       }
-    )
+
+      # 5. Redshift SCD Type 2 Merge - Product Dimension
+      MergeProductDim = {
+        Type = "Task"
+        End = true
+        Resource = "arn:aws:states:::aws-sdk:redshiftdata:executeStatement"
+        Parameters = {
+          ClusterIdentifier = var.redshift_cluster_identifier
+          Database          = var.redshift_database
+          DbUser            = "adminuser"
+          Sql               = "CALL sales.sp_merge_dim_product();"
+        }
+      }
+    }
   })
-  
+
   tags = {
     Name = "${var.project_name}-${var.environment}-state-machine"
   }
 }
 
-# EventBridge Schedule for Step Functions
+# ===================================================================
+# EventBridge Schedule - Pipeline Trigger
+# ===================================================================
 resource "aws_cloudwatch_event_rule" "sfn_schedule" {
   name                = "${var.project_name}-${var.environment}-sfn-schedule"
   description         = "Schedule for Step Functions"

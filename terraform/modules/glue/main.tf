@@ -1,4 +1,7 @@
-# Glue IAM Role
+# ===================================================================
+# Glue IAM Role - Service Permissions
+# ===================================================================
+# Allows Glue to access S3, Secrets Manager, and CloudWatch Logs.
 resource "aws_iam_role" "glue_role" {
   name = "${var.project_name}-${var.environment}-glue-role"
 
@@ -16,6 +19,7 @@ resource "aws_iam_role" "glue_role" {
   })
 }
 
+# Custom Policy for specific bucket and secret access
 resource "aws_iam_policy" "glue_policy" {
   name = "${var.project_name}-${var.environment}-glue-policy"
   policy = jsonencode({
@@ -62,14 +66,15 @@ resource "aws_iam_role_policy_attachment" "glue_custom_policy" {
   policy_arn = aws_iam_policy.glue_policy.arn
 }
 
-
-# Security Group for Glue
+# ===================================================================
+# Glue Networking - Security Group
+# ===================================================================
+# Enables Glue jobs to communicate with Redshift and S3 within the VPC.
 resource "aws_security_group" "glue" {
   name        = "${var.project_name}-${var.environment}-glue-sg"
   description = "Security group for Glue"
   vpc_id      = var.vpc_id
 
-  # Allow self-reference
   ingress {
     from_port = 0
     to_port   = 0
@@ -96,79 +101,98 @@ resource "aws_security_group_rule" "redshift_ingress_glue" {
     to_port = 5439
     protocol = "tcp"
     source_security_group_id = aws_security_group.glue.id
-    security_group_id = var.redshift_security_group_id
+    security_group_id        = var.redshift_security_group_id
 }
 
-
+# ===================================================================
+# Glue Data Catalog - Central Database
+# ===================================================================
 resource "aws_glue_catalog_database" "main" {
   name = "${var.project_name}_${var.environment}_db"
 }
 
-# Upload scripts to S3
+# ===================================================================
+# ETL Script Deployment - S3 Upload
+# ===================================================================
+# Automatically uploads all Python scripts to the scripts/ folder.
 resource "aws_s3_object" "scripts" {
-  for_each = fileset("${path.module}/../../../etl_glue_jobs", "*.py")
+  for_each = fileset("${path.module}/../../../etl_glue_jobs", "**/*.py")
   
   bucket = var.bucket_name
-  key    = "scripts/${each.value}"
+  key    = "scripts/${basename(each.value)}"
   source = "${path.module}/../../../etl_glue_jobs/${each.value}"
   etag   = filemd5("${path.module}/../../../etl_glue_jobs/${each.value}")
 }
 
-# Glue Connection
+# ===================================================================
+# Glue Connection - Redshift Connectivity
+# ===================================================================
+# Configures the JDBC connection for loading data into the warehouse.
 resource "aws_glue_connection" "redshift" {
   name = "redshift-connection"
   
   connection_properties = {
-    JDBC_CONNECTION_URL = "jdbc:redshift://..." # Ideally get from Redshift directly but we can't easily here without more inputs. 
-                                                # Use Secrets Manager usually or construct if we have endpoint.
-                                                # For now, skipping detailed connection string construction to avoid errors
-                                                # or assumes the script picks it up from Secrets Manager.
-                                                # But Glue Connection object represents network.
-    SECRET_ID = var.redshift_secret_arn
+    JDBC_CONNECTION_URL = "jdbc:redshift://${var.redshift_endpoint}/dev"
+    SECRET_ID           = var.redshift_secret_arn
   }
 
   physical_connection_requirements {
-    availability_zone = var.availability_zone
+    availability_zone      = var.availability_zone
     security_group_id_list = [aws_security_group.glue.id]
-    subnet_id = var.subnet_ids[0]
+    subnet_id              = var.subnet_ids[0]
   }
 }
 
-# Crawler
-resource "aws_glue_crawler" "bronze" {
+# ===================================================================
+# Glue Crawlers - Bronze Layer Schema Discovery
+# ===================================================================
+# Individual crawlers for each table in the Bronze (Raw) folder.
+resource "aws_glue_crawler" "tables" {
+  for_each = toset(["Customer", "Orders", "Product", "orderDetails"])
+
   database_name = aws_glue_catalog_database.main.name
-  name          = "${var.project_name}-${var.environment}-bronze-crawler"
+  name          = "${var.project_name}-${var.environment}-crawler-${each.key}"
   role          = aws_iam_role.glue_role.arn
 
   s3_target {
-    path = "s3://${var.bucket_name}/bronze/"
+    path = "s3://${var.bucket_name}/bronze/dev/${each.key}/"
   }
   
   tags = {
-    Name = "${var.project_name}-${var.environment}-bronze-crawler"
+    Name = "${var.project_name}-${var.environment}-crawler-${each.key}"
   }
 }
 
-# Jobs
+# ===================================================================
+# Glue Spark Jobs - Dynamic ETL Execution
+# ===================================================================
+# provisions all transform and load jobs with parameterized arguments.
 resource "aws_glue_job" "job" {
-  for_each = fileset("${path.module}/../../../etl_glue_jobs", "*.py")
+  for_each = fileset("${path.module}/../../../etl_glue_jobs", "**/*.py")
 
-  name     = "${var.project_name}-${var.environment}-${replace(each.value, ".py", "")}"
-  role_arn = aws_iam_role.glue_role.arn
+  name         = "${var.project_name}-${var.environment}-${replace(basename(each.value), ".py", "")}"
+  role_arn     = aws_iam_role.glue_role.arn
   glue_version = "4.0"
 
   command {
-    script_location = "s3://${var.bucket_name}/scripts/${each.value}"
+    script_location = "s3://${var.bucket_name}/scripts/${basename(each.value)}"
   }
   
+  # Dynamic Arguments passed to Python scripts
   default_arguments = {
-    "--job-language" = "python"
-    "--TempDir"      = "s3://${var.bucket_name}/temporary/"
+    "--job-language"        = "python"
+    "--TempDir"             = "s3://${var.bucket_name}/temporary/"
+    "--SOURCE_BUCKET"       = var.bucket_name
+    "--GLUE_DATABASE"       = aws_glue_catalog_database.main.name
+    "--TARGET_PREFIX"       = "silver/dev"
+    "--REDSHIFT_CONNECTION" = aws_glue_connection.redshift.name
+    "--STAGING_TABLE"       = "sales.stage_dim_${replace(lower(basename(each.value)), "load_processed_", "")}" # Default naming pattern
+    "--job-bookmark-option" = "job-bookmark-enable"
   }
 
   execution_property {
     max_concurrent_runs = 1
   }
 
-  connections = [aws_glue_connection.redshift.name] # Attach connection to all jobs for simplicity, or select specific ones
+  connections = [aws_glue_connection.redshift.name]
 }
