@@ -13,3 +13,7 @@ output "dms_replication_task_arn" {
 output "lambda_function_name" {
   value = module.lambda.function_name
 }
+
+output "state_machine_arn" {
+  value = module.step_functions.state_machine_arn
+}

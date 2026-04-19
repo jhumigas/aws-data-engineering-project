@@ -68,7 +68,7 @@ resource "aws_sfn_state_machine" "main" {
       # 1. Parallel Discovery of raw Bronze data
       StartCrawlers = {
         Type = "Parallel"
-        Next = "RunTransformJobs"
+        Next = "WaitForCrawlers"
         Branches = [
           for crawler in var.glue_crawler_names : {
             StartAt = "Run_${crawler}"
@@ -84,7 +84,14 @@ resource "aws_sfn_state_machine" "main" {
         ]
       }
 
-      # 2. Parallel Transform (Bronze -> Silver Parquet)
+      # 2. Wait for Crawlers to finish discovering schema
+      WaitForCrawlers = {
+        Type    = "Wait"
+        Seconds = 120
+        Next    = "RunTransformJobs"
+      }
+
+      # 3. Parallel Transform (Bronze -> Silver Parquet)
       RunTransformJobs = {
         Type = "Parallel"
         Next = "RunLoadJobs"
@@ -103,7 +110,7 @@ resource "aws_sfn_state_machine" "main" {
         ]
       }
 
-      # 3. Parallel Load (Silver -> Redshift Staging)
+      # 4. Parallel Load (Silver -> Redshift Staging)
       RunLoadJobs = {
         Type = "Parallel"
         Next = "MergeCustomerDim"
@@ -122,7 +129,7 @@ resource "aws_sfn_state_machine" "main" {
         ]
       }
 
-      # 4. Redshift SCD Type 2 Merge - Customer Dimension
+      # 5. Redshift SCD Type 2 Merge - Customer Dimension
       MergeCustomerDim = {
         Type = "Task"
         Next = "MergeProductDim"
@@ -135,7 +142,7 @@ resource "aws_sfn_state_machine" "main" {
         }
       }
 
-      # 5. Redshift SCD Type 2 Merge - Product Dimension
+      # 6. Redshift SCD Type 2 Merge - Product Dimension
       MergeProductDim = {
         Type = "Task"
         End = true
