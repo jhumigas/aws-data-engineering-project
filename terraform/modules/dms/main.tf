@@ -148,6 +148,8 @@ resource "aws_dms_endpoint" "target" {
     service_access_role_arn = aws_iam_role.dms_s3_role.arn
     data_format             = "csv"
     timestamp_column_name   = "db_timestamp" # Metadata column for CDC tracking
+    add_column_name         = true           # Ensure headers are included in CSVs
+    include_op_for_full_load = true          # Include 'Op' column even in full load files
   }
 
   tags = {
