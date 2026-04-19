@@ -188,34 +188,46 @@ resource "aws_glue_crawler" "tables" {
 }
 
 # ===================================================================
-# Glue Spark Jobs - Dynamic ETL Execution
+# Glue Spark Jobs - Explicit Job Definitions
 # ===================================================================
-# provisions all transform and load jobs with parameterized arguments.
-resource "aws_glue_job" "job" {
-  for_each = fileset("${path.module}/../../../etl_glue_jobs", "**/*.py")
+locals {
+  etl_jobs = {
+    "raw_customer_etl_job"      = { file = "transform/raw_customer_etl_job.py", table = "stage_dim_customer" }
+    "raw_orderdetails_etl_job"  = { file = "transform/raw_orderdetails_etl_job.py", table = "stage_fact_order_details" }
+    "raw_orders_etl_job"        = { file = "transform/raw_orders_etl_job.py", table = "stage_fact_orders" }
+    "raw_product_etl_job"       = { file = "transform/raw_product_etl_job.py", table = "stage_dim_product" }
+    "load_processed_customers"  = { file = "load/load_processed_customers_job.py", table = "stage_dim_customer" }
+    "load_processed_orderdetails"= { file = "load/load_processed_orderdetails_job.py", table = "stage_fact_order_details" }
+    "load_processed_orders"     = { file = "load/load_processed_orders_job.py", table = "stage_fact_orders" }
+    "load_processed_products"   = { file = "load/load_processed_products.py", table = "stage_dim_product" }
+  }
+}
 
-  name         = "${var.project_name}-${var.environment}-${replace(basename(each.value), ".py", "")}"
+resource "aws_glue_job" "job" {
+  for_each = local.etl_jobs
+
+  name         = "${var.project_name}-${var.environment}-${each.key}"
   role_arn     = aws_iam_role.glue_role.arn
   glue_version = "4.0"
 
   command {
-    script_location = "s3://${var.bucket_name}/scripts/${basename(each.value)}"
+    script_location = "s3://${var.bucket_name}/scripts/${basename(each.value.file)}"
   }
   
-  # Dynamic Arguments passed to Python scripts
   default_arguments = {
     "--job-language"        = "python"
     "--TempDir"             = "s3://${var.bucket_name}/temporary/"
+    "--TEMP_DIR"            = "s3://${var.bucket_name}/temporary/"
     "--SOURCE_BUCKET"       = var.bucket_name
     "--GLUE_DATABASE"       = aws_glue_catalog_database.main.name
     "--TARGET_PREFIX"       = "silver/dev"
     "--REDSHIFT_CONNECTION" = aws_glue_connection.redshift.name
-    "--STAGING_TABLE"       = "sales.stage_dim_${replace(lower(basename(each.value)), "load_processed_", "")}" # Default naming pattern
+    "--STAGING_TABLE"       = "sales.${each.value.table}"
     "--job-bookmark-option" = "job-bookmark-enable"
   }
 
   execution_property {
-    max_concurrent_runs = 1
+    max_concurrent_runs = 5
   }
 
   connections = [aws_glue_connection.redshift.name]
