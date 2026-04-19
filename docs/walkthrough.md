@@ -38,10 +38,34 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    terraform apply
    ```
 
+   > [!NOTE]
+   > **Parallel Provisioning**: RDS and DMS instances are provisioned in parallel to reduce deployment time (approx. 10-15 minutes total). While the compute infrastructure is built concurrently, the data replication task is automatically configured to wait until the RDS schema is fully initialized via Flyway. The endpoint test connection to the database might fail if the database is not yet accessible.
+
 6. **Manual RDS Configuration (CDC)**:
    Connect to the RDS instance (e.g., using DBeaver) and run the following command to finalize the binlog retention for CDC:
    ```sql
    CALL mysql.rds_set_configuration('binlog retention hours', 24);
+   ```
+
+7. **Manual Redshift Configuration (DDL)**:
+   Since the Redshift cluster is private, use the AWS CLI (Data API) to create the `sales` schema and initialize tables. This ensures the Glue jobs have a target to load data into:
+   ```bash
+   # Create schema
+   aws redshift-data execute-statement \
+     --cluster-identifier aws-de-project-dev-redshift \
+     --database dev \
+     --db-user adminuser \
+     --sql "CREATE SCHEMA IF NOT EXISTS sales;" \
+     --region ca-central-1
+   ```
+   *Note: Repeat for all table DDLs and stored procedures provided in the `data_warehouse_redshift/` directory.*
+
+8. **Trigger the Data Pipeline**:
+   Start the Step Functions state machine to orchestrate the end-to-end ETL flow:
+   ```bash
+   aws stepfunctions start-execution \
+     --state-machine-arn $(terraform output -raw state_machine_arn) \
+     --region ca-central-1
    ```
 
 ## Resources Created
