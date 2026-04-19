@@ -68,9 +68,9 @@ if customer_df_from_catalog.count() > 0:
                         .withColumn("record_end_ts",record_end_ts)\
                         .withColumn("ingestion_date", current_date())\
                         .withColumn("active_flag",active_flag)\
-                        .withColumn("cust_first_name", split(renamed_customer["cust_name"], " ")[0])\
-                        .withColumn("cust_last_name", split(renamed_customer["cust_name"], " ")[1])\
-                        .drop("cust_name")
+                        .withColumn("cust_first_name", split(col("name"), " ")[0])\
+                        .withColumn("cust_last_name", split(col("name"), " ")[1])\
+                        .drop("name")
 
     # create glue dynamicframe from the dataframe
     customer_final_dyf = DynamicFrame.fromDF(customer_final_df,glueContext,"customer_final_dyf")  

@@ -144,6 +144,22 @@ resource "aws_glue_connection" "redshift" {
 }
 
 # ===================================================================
+# Glue Classifier - Schema Detection Tweaks
+# ===================================================================
+# Ensures CSV headers are used as column names.
+resource "aws_glue_classifier" "csv_header" {
+  name = "${var.project_name}-${var.environment}-csv-classifier"
+
+  csv_classifier {
+    allow_single_column    = false
+    contains_header        = "PRESENT"
+    delimiter              = ","
+    disable_value_trimming = false
+    quote_symbol           = "\""
+  }
+}
+
+# ===================================================================
 # Glue Crawlers - Bronze Layer Schema Discovery
 # ===================================================================
 # Individual crawlers for each table in the Bronze (Raw) folder.
@@ -153,6 +169,14 @@ resource "aws_glue_crawler" "tables" {
   database_name = aws_glue_catalog_database.main.name
   name          = "${var.project_name}-${var.environment}-crawler-${each.key}"
   role          = aws_iam_role.glue_role.arn
+  classifiers   = [aws_glue_classifier.csv_header.name]
+
+  configuration = jsonencode({
+    Version = 1.0
+    CrawlerOutput = {
+      Tables = { TableThreshold = 1 }
+    }
+  })
 
   s3_target {
     path = "s3://${var.bucket_name}/bronze/dev/${each.key}/"

@@ -87,7 +87,7 @@ resource "aws_sfn_state_machine" "main" {
       # 2. Wait for Crawlers to finish discovering schema
       WaitForCrawlers = {
         Type    = "Wait"
-        Seconds = 120
+        Seconds = 300
         Next    = "RunTransformJobs"
       }
 

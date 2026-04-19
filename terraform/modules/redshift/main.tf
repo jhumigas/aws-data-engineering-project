@@ -95,6 +95,10 @@ resource "aws_redshift_cluster" "main" {
   skip_final_snapshot = true
   publicly_accessible = false
 
+  # Explicitly setting these to match current state and avoid modification conflicts
+  encrypted                            = true
+  availability_zone_relocation_enabled = true
+
   tags = {
     Name = "${var.project_name}-${var.environment}-redshift"
   }
