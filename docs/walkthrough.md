@@ -1,56 +1,63 @@
 # Terraform Infrastructure Walkthrough
 
-This guide explains how to deploy the AWS Data Engineering Project infrastructure using the provided Terraform code.
+This guide explains how to deploy the AWS Data Engineering Project infrastructure using the provided Terraform code and the centralized `Makefile` control plane.
 
 ## Prerequisites
 - **Terraform** installed (v1.0+).
 - **AWS CLI** configured with appropriate credentials (`aws configure`).
 - **Python 3.x** and **uv** (for Lambda and Glue job packaging).
+- **Docker** (for local migrations and BI tools).
+
 ## Deployment Steps
 
-1. **Navigate to the Project root**:
+1. **Initialize and Build**:
+   Navigate to the project root and build the Lambda package:
    ```bash
-   cd ..
+   make build-lambda
    ```
 
-2. **Initialize and Apply**:
+2. **Provision Infrastructure**:
+   Deploy the AWS resources via Terraform:
    ```bash
    cd terraform && terraform init && terraform apply -auto-approve
    ```
 
    > [!NOTE]
-   > **Parallel Provisioning**: RDS, DMS, and Redshift are provisioned in parallel to reduce deployment time.
+   > **Parallel Provisioning**: RDS, DMS, and Redshift are provisioned in parallel to reduce deployment time (approx. 15 minutes).
 
-3. **Manual RDS Configuration (CDC)**:
-   Run the Flyway migrations to setup the RDS source schema and enable CDC:
+3. **Initialize RDS (Flyway & CDC)**:
+   Navigate back to the project root and run migrations to setup the source schema:
    ```bash
    make setup-rds
    ```
 
-4. **Initialize Redshift Schema**:
-   Use the Makefile to establish the `sales` schema, tables, and procedures:
+4. **Initialize Redshift Warehouse**:
+   Establish the Redshift `sales` schema, tables, and SCD Type 2 procedures:
    ```bash
    make setup-redshift
    ```
 
-5. **Discover Schema**:
-   Run the Glue Crawlers to discover the schema from the Bronze S3 folders:
+5. **Discover Schema (Glue Crawlers)**:
+   Trigger schema discovery for the raw data in S3:
    ```bash
-   for crawler in aws-de-project-dev-crawler-Customer aws-de-project-dev-crawler-Orders aws-de-project-dev-crawler-Product aws-de-project-dev-crawler-orderDetails; do
-     aws glue start-crawler --name $crawler --region ca-central-1
-   done
+   make trigger-crawlers
    ```
-   *Note: Wait for all crawlers to show a status of 'READY' before proceeding.*
+   *Note: Wait for all crawlers to show a status of 'READY' in the AWS Console before proceeding.*
 
 6. **Trigger the Data Pipeline**:
-   Start the pipeline using the Makefile:
+   Start the end-to-end data flow:
    ```bash
-   make trigger-dms
-   make trigger-lambda
-   make trigger-pipeline
+   make trigger-dms      # Start CDC Replication
+   make trigger-lambda   # Seed initial data
+   make trigger-pipeline # Start Step Functions ETL
    ```
 
-
+7. **Local Visualization (Optional)**:
+   Spin up a local BI tool to explore the Redshift data:
+   ```bash
+   make run-metabase
+   ```
+   *Access at http://localhost:3000*
 
 ## Verification
 
@@ -61,6 +68,7 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    - Run Stored Procedures for SCD Type 2 merge.
 
 2. **Query the Warehouse**:
+   Verify data existence via the Data API:
    ```bash
    aws redshift-data execute-statement \
      --cluster-identifier aws-de-project-dev-redshift \
@@ -80,7 +88,7 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
 - **Step Functions**: Centralized ETL Orchestrator.
 
 ## Cleanup
-To destroy all resources:
+To destroy all cloud resources:
 ```bash
-terraform destroy -auto-approve
+cd terraform && terraform destroy -auto-approve
 ```

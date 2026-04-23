@@ -119,54 +119,6 @@ module "step_functions" {
 }
 
 # ===================================================================
-# Database Migration Task - Flyway Orchestration
-# ===================================================================
-# Automatically runs SQL migrations to set up the RDS schema.
-# Triggers on any change to the .sql files in the migration directory.
-resource "null_resource" "db_migration" {
-  depends_on = [module.rds]
-
-  triggers = {
-    migration_hash = sha1(join("", [for f in fileset("${path.module}/../db/migration", "*.sql") : filesha1("${path.module}/../db/migration/${f}")]))
-  }
-
-  provisioner "local-exec" {
-    environment = {
-      FLYWAY_PASSWORD = module.rds.db_instance_password
-    }
-    command = <<-EOT
-      bash ${path.module}/../db/migrate.sh \
-           ${replace(module.rds.db_instance_endpoint, ":3306", "")} \
-           ${module.rds.db_instance_username}
-    EOT
-  }
-}
-
-# ===================================================================
-# DMS Automation - Replication Task Startup
-# ===================================================================
-# Automatically starts the DMS task once the RDS schema is ready.
-resource "null_resource" "start_dms_task" {
-  depends_on = [null_resource.db_migration, module.dms]
-
-  provisioner "local-exec" {
-    command = "aws dms start-replication-task --replication-task-arn ${module.dms.replication_task_arn} --start-replication-task-type start-replication --region ${var.aws_region}"
-  }
-}
-
-# ===================================================================
-# Data Generator Trigger - Initial Load
-# ===================================================================
-# One-time invocation of the Lambda generator to seed the database.
-resource "null_resource" "trigger_generator" {
-  depends_on = [null_resource.start_dms_task, module.lambda]
-
-  provisioner "local-exec" {
-    command = "aws lambda invoke --function-name ${module.lambda.function_name} --region ${var.aws_region} /tmp/lambda_response.json"
-  }
-}
-
-# ===================================================================
 # S3 Bucket Policy - Centralized Access Control
 # ===================================================================
 # Grants Glue, DMS, and Redshift permissions to interact with the Data Lake.
