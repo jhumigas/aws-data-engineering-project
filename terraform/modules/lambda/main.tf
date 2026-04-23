@@ -34,50 +34,11 @@ resource "aws_security_group_rule" "rds_ingress_lambda" {
 }
 
 # ===================================================================
-# Lambda Build Process - Dependency Packaging
-# ===================================================================
-# Uses 'uv' to package Python dependencies for a Linux environment.
-# Ensures that 'mysql-connector-python' and 'Faker' are available in the runtime.
-resource "null_resource" "lambda_build" {
-  triggers = {
-    # Re-run build if any source file or dependency list changes
-    pyproject = filemd5("${path.module}/../../../data_generator_lambda/pyproject.toml")
-    lock      = filemd5("${path.module}/../../../data_generator_lambda/uv.lock")
-    handler   = filemd5("${path.module}/../../../data_generator_lambda/lambda_function.py")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      cd ${path.module}/../../../data_generator_lambda
-      rm -rf build
-      mkdir -p build
-      # Targeted install for AWS Lambda's architecture (x86_64 Linux)
-      uv pip install \
-        --no-installer-metadata \
-        --no-compile-bytecode \
-        --python-platform x86_64-manylinux2014 \
-        --python 3.13 \
-        --target build/ \
-        -r pyproject.toml
-      cp lambda_function.py build/
-    EOT
-  }
-}
-
-# Archive the build directory into a ZIP file for upload
-data "archive_file" "lambda_zip" {
-  depends_on  = [null_resource.lambda_build]
-  type        = "zip"
-  source_dir  = "${path.module}/../../../data_generator_lambda/build/"
-  output_path = "${path.module}/lambda_function.zip"
-}
-
-# ===================================================================
 # AWS Lambda Function - Data Generator
 # ===================================================================
 # Simulates application traffic by inserting/updating data in RDS.
 resource "aws_lambda_function" "data_generator" {
-  filename      = data.archive_file.lambda_zip.output_path
+  filename      = "${path.module}/lambda_function.zip"
   function_name = "${var.project_name}-${var.environment}-data-generator"
   role          = aws_iam_role.lambda_role.arn
   handler       = "lambda_function.lambda_handler" 
@@ -90,7 +51,7 @@ resource "aws_lambda_function" "data_generator" {
     security_group_ids = [aws_security_group.lambda.id]
   }
 
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  source_code_hash = filebase64sha256("${path.module}/lambda_function.zip")
 
   # Environment Variables for DB Connectivity
   environment {
