@@ -9,7 +9,7 @@ They have an application running on MySQL database on-premise, and an analyst qu
 
 However, there start a challenge: as the startup scale, they needs more analytics, for marketing campaigns, and business strategy however the current database is not optimized for analytics.
 
-We build the different services required from ingesting data in our bronze layer to exposing it into a dashboars in  QuickSight.
+We build the different services required from ingesting data in our bronze layer to exposing it into a dashboard in QuickSight (also explored Metabase and Apache Superset).
 ![Orchestrator](./docs/architecture/orchestrator.v1.png)
 
 ## Pre-requisites
@@ -21,6 +21,14 @@ Think about the cost of the services used in this project (set up budget), and c
 You can use DBeaver or any SQL client to connect to the databases.
 
 ## Architecture Diagram
+
+![Architecture Diagram](./docs/architecture/architecture_diagram.png)
+
+In the diagram above, we have simulated an on-premise MySQL database using RDS and Lambda (for data generation).
+The actual data pipeline starts with DMS replicating data using CDC to Amazon S3 in csv format (this is the raw zone).
+Then we use AWS Glue to process the data, into a silver layer and load it into Redshift (our data warehouse).
+Finally, we use Quicksight to visualize the data.
+
 
 ```mermaid
 graph TD
@@ -60,12 +68,7 @@ graph TD
     SFN -.->|Trigger| RS
 ```
 
-![Architecture Diagram](./docs/architecture/architecture_diagram.png)
 
-In the diagram above, we have simulated an on-premise MySQL database using RDS and Lambda (for data generation).
-The actual data pipeline starts with DMS replicating data using CDC to Amazon S3 in csv format (this is the raw zone).
-Then we use AWS Glue to process the data, into a silver layer and load it into Redshift (our data warehouse).
-Finally, we use Quicksight to visualize the data.
 
 Detailed logic for orchestration and security can be found in:
 - [Security Design](./docs/SECURITY_DESIGN.md)
