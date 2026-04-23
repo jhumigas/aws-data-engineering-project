@@ -22,12 +22,54 @@ You can use DBeaver or any SQL client to connect to the databases.
 
 ## Architecture Diagram
 
+```mermaid
+graph TD
+    subgraph "Source Layer"
+        RDS[(RDS MySQL)]
+        LG[Lambda Generator]
+    end
+
+    subgraph "Replication Layer"
+        DMS[AWS DMS CDC]
+    end
+
+    subgraph "Data Lake (S3)"
+        B[(Bronze / CSV)]
+        S[(Silver / Parquet)]
+    end
+
+    subgraph "Transformation & Warehouse"
+        Glue[AWS Glue Spark]
+        RS[(Amazon Redshift)]
+    end
+
+    subgraph "Orchestration"
+        SFN{Step Functions}
+    end
+
+    LG -->|Seed Data| RDS
+    RDS -->|CDC Streams| DMS
+    DMS -->|Land Raw| B
+    B --> Glue
+    Glue -->|Enrich & Format| S
+    S --> Glue
+    Glue -->|Load Staging| RS
+    RS -->|SCD Type 2 Merge| RS
+    
+    SFN -.->|Orchestrate| Glue
+    SFN -.->|Trigger| RS
+```
+
 ![Architecture Diagram](./docs/architecture/architecture_diagram.png)
 
 In the diagram above, we have simulated an on-premise MySQL database using RDS and Lambda (for data generation).
 The actual data pipeline starts with DMS replicating data using CDC to Amazon S3 in csv format (this is the raw zone).
 Then we use AWS Glue to process the data, into a silver layer and load it into Redshift (our data warehouse).
 Finally, we use Quicksight to visualize the data.
+
+Detailed logic for orchestration and security can be found in:
+- [Security Design](./docs/SECURITY_DESIGN.md)
+- [Operations Guide](./docs/OPERATIONS_GUIDE.md)
 
 We will be using the following services:
 
@@ -48,29 +90,32 @@ We will be using the following services:
 
 ```text
 .
+├── Makefile                      <-- Control plane for post-provisioning tasks
 ├── application_db_rds            <-- Some DDL script the application database
 ├── data_generator_lambda         <-- Data generator simulating actual data from an e-commerce application
 ├── data_warehouse_redshift       <-- DDL scripts and procedures definition
 │   ├── ddl
 │   ├── stored_procedures
 │   └── validation
+├── db                            <-- Flyway migrations for RDS
 ├── docs
 │   ├── architecture
-│   ├── etl_pipeline_orchestration
+│   ├── SECURITY_DESIGN.md
+│   ├── OPERATIONS_GUIDE.md
 │   └── NOTES.md
 ├── etl_glue_jobs                 <-- Actual transformation and loading jobs running on glue with spark
 │   ├── load
 │   └── transform
-├── orchestration_step_function   <-- ETL Pipeline orchestrator
+├── terraform                     <-- Infrastructure as Code
 └── README.md
 ```
 
 ## TODO
 
-* Use UV for aws lambda packaging see [here](https://docs.astral.sh/uv/guides/integration/aws-lambda/#getting-started) 
-* Add notes on project steps
-* Clean AWS resources
-* Automate initial setup with Terraform
+* [x] Use UV for aws lambda packaging
+* [x] Add notes on project steps
+* [x] Automate initial setup with Terraform
+* [ ] Clean AWS resources
 
 ## References
 
