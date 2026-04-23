@@ -22,15 +22,15 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    > **Parallel Provisioning**: RDS, DMS, and Redshift are provisioned in parallel to reduce deployment time.
 
 3. **Manual RDS Configuration (CDC)**:
-   Connect to the RDS instance and run:
-   ```sql
-   CALL mysql.rds_set_configuration('binlog retention hours', 24);
+   Run the Flyway migrations to setup the RDS source schema and enable CDC:
+   ```bash
+   make setup-rds
    ```
 
 4. **Initialize Redshift Schema**:
-   Use the Makefile to establish the `sales` schema:
+   Use the Makefile to establish the `sales` schema, tables, and procedures:
    ```bash
-   make setup-rds
+   make setup-redshift
    ```
 
 5. **Discover Schema**:

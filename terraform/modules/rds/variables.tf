@@ -19,7 +19,7 @@ variable "allowed_security_group_ids" {
   default = []
 }
 
-variable "db_password" { # We should probably generate this or pass it in, but for Terraform we can use a random_password resource
+variable "db_password" {
   type        = string 
-  default     = null # If null, will be generated
+  default     = "AdminPassword123!"
 }

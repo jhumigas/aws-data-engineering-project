@@ -21,3 +21,9 @@ variable "environment" {
   type        = string
   default     = "dev"
 }
+
+variable "db_password" {
+  description = "Database master password"
+  type        = string
+  default     = "AdminPassword123!"
+}

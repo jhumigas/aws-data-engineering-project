@@ -1,15 +1,4 @@
 # ===================================================================
-# Random Password Generation - Security Best Practice
-# ===================================================================
-# Generates a strong, random password for the master user of the RDS instance.
-# Avoids hardcoding sensitive credentials in Terraform code.
-resource "random_password" "password" {
-  length           = 16
-  special          = true
-  override_special = "!#$%&*()-_=+"
-}
-
-# ===================================================================
 # RDS DB Subnet Group - VPC Networking
 # ===================================================================
 # Defines the subnets across multiple availability zones for the DB.
@@ -103,7 +92,7 @@ resource "aws_db_instance" "main" {
   allocated_storage = 20 # Standard disk space for small-scale dev
   storage_type      = "gp2"
   username          = "admin"
-  password          = var.db_password != null ? var.db_password : random_password.password.result
+  password          = var.db_password
   db_name           = "dev" # Default database schema
 
   # Advanced Configuration
