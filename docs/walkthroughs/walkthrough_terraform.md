@@ -59,9 +59,16 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    ```
    *Access at http://localhost:3000*
 
+For a deep dive into the system's design, see the [Security Design](../SECURITY_DESIGN.md) and [Operations Guide](../OPERATIONS_GUIDE.md).
+
 ## Verification
 
-1. **Monitor Step Functions**: 
+1. **Check Infrastructure Outputs**:
+   ```bash
+   make tf-outputs
+   ```
+
+2. **Monitor Step Functions**: 
    Check the execution status in the AWS Console. The pipeline will:
    - Run Spark Jobs to transform CSV to Parquet.
    - Load data into Redshift Staging.

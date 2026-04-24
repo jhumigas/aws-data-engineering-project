@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup-rds setup-redshift trigger-dms trigger-lambda trigger-pipeline trigger-crawlers build-lambda clean-s3 tf-outputs run-metabase run-superset
+.PHONY: help setup-rds setup-redshift trigger-dms trigger-lambda trigger-pipeline trigger-crawlers build-lambda clean-s3 tf-outputs run-metabase run-superset tf-init tf-plan tf-apply tf-destroy
 
 ## Show this help message
 help:
@@ -12,6 +12,22 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+## Initialize Terraform
+tf-init: ## Initialize Terraform
+	@cd terraform && terraform init
+
+## Plan Terraform changes
+tf-plan: ## Plan Terraform changes
+	@cd terraform && terraform plan
+
+## Apply Terraform changes
+tf-apply: ## Apply Terraform changes
+	@cd terraform && terraform apply -auto-approve
+
+## Destroy Terraform resources
+tf-destroy: ## Destroy Terraform resources
+	@cd terraform && terraform destroy -auto-approve
 
 ## Display all Terraform outputs
 tf-outputs: ## Display all Terraform outputs
