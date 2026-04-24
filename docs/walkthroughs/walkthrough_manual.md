@@ -1,6 +1,6 @@
 # Manual Infrastructure Setup Guide
 
-This guide provides a step-by-step walkthrough for manually provisioning and configuring the AWS Data Engineering Project infrastructure using the AWS Management Console and CLI.
+This guide provides a detailed, step-by-step walkthrough for manually provisioning and configuring the AWS Data Engineering Project infrastructure using the AWS Management Console and CLI.
 
 ## Prerequisites
 - **AWS Account** with administrative access.
@@ -11,21 +11,23 @@ This guide provides a step-by-step walkthrough for manually provisioning and con
 
 ## Phase 1: Foundation and Source Database
 
-### 1. User Permissions
+### 0. User Permissions
 Create an IAM user or role with administrative access to perform the subsequent provisioning steps.
 
-### 2. RDS MySQL Setup
-We use RDS to simulate a transactional source database.
-- **Provisioning**: Create a MySQL 8.0 Community Edition instance (Free Tier eligible: `db.t3.micro`).
-- **Network**: Ensure the instance is **Publicly Accessible** for local SQL client connectivity.
+### 1. RDS MySQL Setup
+We use RDS to simulate an on-premise transactional source database.
+- **Engine**: MySQL 8.0 Community Edition.
+- **Instance Class**: `db.t3.micro` (Free Tier eligible).
+- **Public Access**: Enable **Publicly Accessible** to allow local SQL client connectivity for initial setup.
 - **Parameter Group**: 
-    - Create a custom parameter group.
-    - Set `binlog_format = ROW` and `binlog_row_image = FULL`.
-    - Attach to the RDS instance (requires reboot).
+    - Create a custom parameter group for MySQL 8.0.
+    - Set `binlog_format = ROW`.
+    - Set `binlog_row_image = FULL`.
+    - Attach to the RDS instance (reboot required to apply).
 - **Initialization**: 
     - Run the DDL script found in `db/migration/V1__Initial_Schema.sql`.
 - **CDC Configuration**:
-    - Connect via SQL client and run:
+    - Connect via SQL client and execute the binary logging retention command:
       ```sql
       CALL mysql.rds_set_configuration('binlog retention hours', 24);
       ```
@@ -34,64 +36,85 @@ We use RDS to simulate a transactional source database.
 
 ## Phase 2: Storage and Replication
 
-### 3. S3 Data Lake
+### 2. S3 Data Lake
 Create a single S3 bucket to serve as the project's data lake.
-- **Structure**: Create top-level folders: `bronze/` and `silver/`.
-- **Policy**: Attach a policy allowing DMS, Glue, and Redshift to access their respective prefixes (see `docs/SECURITY_DESIGN.md`).
+- **Folders**: Create `bronze/` (for raw CSV) and `silver/` (for processed Parquet).
+- **Policy**: Create a policy to allow Glue, DMS, and Redshift to access the bucket (see `docs/SECURITY_DESIGN.md` for role-specific prefixes).
 
-### 4. DMS Replication
-Setup the continuous data capture (CDC) from RDS to S3.
-- **Replication Instance**: Provision a small instance in a public/private subnet.
+### 3. DMS Replication (CDC)
+Setup continuous data capture from RDS to S3.
+- **Replication Instance**: Small instance (e.g., `dms.t3.medium`).
 - **Endpoints**:
-    - **Source**: Connect to the RDS instance using Secrets Manager credentials.
-    - **Target**: Connect to the S3 bucket with a role allowing `s3:PutObject`.
+    - **Source**: Connect to the RDS instance. Test the connection.
+    - **Target**: Connect to the S3 bucket. Ensure the service role has `s3:PutObject` permissions. Test the connection.
 - **Replication Task**: 
-    - Type: **Full load + CDC**.
-    - Target: `s3://<bucket>/bronze/`.
-    - Enable headers: Set `AddColumnName=true` and `IncludeOpForFullLoad=true`.
+    - **Migration Type**: Full load + CDC.
+    - **Target Location**: `s3://<bucket>/bronze/`.
+    - **Settings**: Ensure `AddColumnName=true` and `IncludeOpForFullLoad=true` are set in the S3 target settings to provide headers and operation metadata to Spark.
 
 ---
 
 ## Phase 3: Processing and Warehousing
 
-### 5. Data Generation (Lambda)
-Simulate live application traffic.
+### 4. Data Generation (Lambda)
+Simulate real-time application traffic.
+- **IAM Role**: Create a role with access to RDS and Secrets Manager.
 - **Function**: Deploy the Python script from `data_generator_lambda/`.
-- **Packaging**: Use `uv` to bundle dependencies (`mysql-connector-python`, `Faker`).
-- **Scheduling**: Create an EventBridge rule to trigger the Lambda every 5 minutes.
+- **Packaging**: Use `uv` for packaging to ensure `mysql-connector-python` and `Faker` are included.
+- **Secrets Manager**: Store DB credentials (host, port, user, password) as a JSON secret.
 
-### 6. Redshift Data Warehouse
-- **Provisioning**: Create an RA3 single-node cluster (or Serverless workgroup).
-- **Schema**: Create the `sales` schema using the Data API or SQL client.
-- **Objects**: Run the DDLs and Stored Procedures found in `data_warehouse_redshift/`.
+### 5. Redshift Data Warehouse
+- **Provisioning**: Create a Redshift RA3 cluster or a Serverless Workgroup/Namespace.
+- **Network**: Ensure the cluster is accessible and VPC endpoints are configured (see Step 7).
+- **Schema & Objects**: Establish the `sales` schema and run the DDLs/Stored Procedures in `data_warehouse_redshift/` to enable SCD Type 2 functionality.
 
-### 7. Glue ETL (Spark)
-- **Catalog**: Run Glue Crawlers on the `bronze/` folder to discover the schema.
-- **Transform**: Deploy Spark jobs to clean data and convert to Parquet in the `silver/` layer.
-- **Load**: Deploy jobs to load Parquet data into Redshift staging tables.
-
----
-
-## Phase 4: Orchestration and Visualization
-
-### 8. Step Functions
-Create a state machine to sequence the pipeline:
-1. Parallel Load Dimensions (Customer, Product).
-2. Redshift Merge (Stored Procedures).
-3. Parallel Load Facts (Orders, OrderDetails).
-
-### 9. QuickSight / BI
-- Connect QuickSight (or local Metabase/Superset) to the Redshift cluster.
-- Build visualizations using the `sales.dim_customer` and `sales.fact_orders` tables.
+### 6. Glue ETL (Transformation)
+Process data from the Bronze layer to the Silver layer.
+- **IAM Role**: Attach `AWSGlueServiceRole`, `AWSGlueNotebookRole`, and your custom S3 bucket policy.
+- **Database**: Create a Glue Data Catalog database (e.g., `aws_de_project_db`).
+- **Crawlers**: Create one crawler per Bronze folder to discover schema.
+- **Spark Jobs**: Deploy the jobs from `etl_glue_jobs/transform/`. 
+- **Bookmarks**: **Enable job bookmarks** to avoid reprocessing old data.
 
 ---
 
-## Phase 5: Governance and Cleanup
+## Phase 4: Integration and Orchestration
 
-### 10. PII Management (Lake Formation)
-- Set up Lake Formation administrators.
-- Register S3 locations.
-- Implement LF-Tags for PII classification on sensitive columns (e.g., customer names).
+### 7. Redshift Loading & VPC Networking
+- **VPC Endpoints**: For private subnet communication, create endpoints for:
+    - **S3** (Gateway)
+    - **Secrets Manager** (Interface)
+    - **Redshift** (Interface)
+    - **STS** (Interface)
+- **Glue Connection**: Create a "Redshift" connection type in Glue using the Redshift cluster's VPC, subnet, and security group.
+- **Loading Jobs**: Deploy scripts from `etl_glue_jobs/load/` to move data from Silver S3 to Redshift staging.
 
-### 11. Cleanup
-Destroy all resources via the console or CLI to avoid ongoing costs when the project is complete.
+### 8. Step Functions (Orchestration)
+Sequence the entire pipeline logic.
+- **IAM Role**: Grant Step Functions permission to trigger Glue and Redshift Data API (attach `AWSGlueServiceRole`).
+- **State Machine**: Use the definition provided in `orchestration_step_function/state_machine.json`.
+
+---
+
+## Phase 5: Automation and Governance
+
+### 9. Visualization (QuickSight / BI)
+- Sign up for QuickSight in the same region.
+- Create a dataset connecting to Redshift (ensure QuickSight has VPC access if the cluster is private).
+- Build a dashboard using dimension and fact tables.
+
+### 10. Scheduling (EventBridge)
+- **Rule 1**: Trigger the Lambda Data Generator (e.g., every 5 minutes).
+- **Rule 2**: Trigger the Step Functions State Machine (e.g., every hour).
+- **Note**: Before enabling schedules, ensure all intermediate data is purged and Glue job bookmarks are reset for a clean production run.
+
+### 11. PII Management (Lake Formation)
+Implement data governance for sensitive information.
+- Set up a **Lake Formation Administrator**.
+- Register S3 data lake locations.
+- Create a **Data Analyst Role** with a trust policy allowing assumption.
+- Implement **LF-Tags** for PII classification.
+- Apply tags to tables and columns to restrict access to PII data.
+
+### 12. Cleanup
+Once satisfied, destroy all AWS resources via the console or CLI to avoid unnecessary costs.
