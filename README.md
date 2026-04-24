@@ -59,23 +59,20 @@ We will be using the following services:
 
 ```text
 .
-├── Makefile                      <-- Control plane for post-provisioning tasks
-├── application_db_rds            <-- Some DDL script the application database
-├── data_generator_lambda         <-- Data generator simulating actual data from an e-commerce application
-├── data_warehouse_redshift       <-- DDL scripts and procedures definition
-│   ├── ddl
-│   ├── stored_procedures
-│   └── validation
-├── db                            <-- Flyway migrations for RDS
+├── Makefile                      <-- Control plane for provisioning and orchestration
+├── application_db_rds            <-- RDS (Source) DDL and setup scripts
+├── data_generator_lambda         <-- Python Lambda for real-time data simulation
+├── data_warehouse_redshift       <-- Redshift DDLs and SCD Type 2 Procedures
+├── db                            <-- Flyway migrations for RDS MySQL
 ├── docs
-│   ├── architecture
-│   ├── SECURITY_DESIGN.md
-│   ├── OPERATIONS_GUIDE.md
-│   └── NOTES.md
-├── etl_glue_jobs                 <-- Actual transformation and loading jobs running on glue with spark
-│   ├── load
-│   └── transform
-├── terraform                     <-- Infrastructure as Code
+│   ├── architecture              <-- Visual diagrams (Mermaid, Excalidraw, PNG)
+│   ├── superpowers              <-- Design specs and implementation plans
+│   ├── walkthroughs             <-- Manual and Automated deployment guides
+│   ├── SECURITY_DESIGN.md        <-- IAM and Surgical Access policy design
+│   └── OPERATIONS_GUIDE.md       <-- Functional logic and SFN orchestration guide
+├── etl_glue_jobs                 <-- Spark ETL jobs (Transform and Load)
+├── orchestration_step_function   <-- Original Step Function definitions
+├── terraform                     <-- Infrastructure as Code (documented modules)
 └── README.md
 ```
 
