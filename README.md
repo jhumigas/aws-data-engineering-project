@@ -9,7 +9,9 @@ They have an application running on MySQL database on-premise, and an analyst qu
 
 However, there start a challenge: as the startup scale, they needs more analytics, for marketing campaigns, and business strategy however the current database is not optimized for analytics.
 
-We build the different services required from ingesting data in our bronze layer to exposing it into a dashboard in QuickSight (also explored Metabase and Apache Superset).
+We build the different services required from ingesting data in our bronze layer to exposing it into a dashboard in QuickSight (also explored Metabase and Apache Superset). 
+
+For a deep dive into the system's design, see the [Security Design](./docs/SECURITY_DESIGN.md) and [Operations Guide](./docs/OPERATIONS_GUIDE.md).
 ![Orchestrator](./docs/architecture/orchestrator.v1.png)
 
 ## Pre-requisites
@@ -20,7 +22,7 @@ Create an IAM user with admin access.
 Think about the cost of the services used in this project (set up budget), and clean up resources after you finish.
 You can use DBeaver or any SQL client to connect to the databases.
 
-## Architecture Diagram
+## Architecture
 
 ![Architecture Diagram](./docs/architecture/architecture_diagram.png)
 
@@ -29,51 +31,14 @@ The actual data pipeline starts with DMS replicating data using CDC to Amazon S3
 Then we use AWS Glue to process the data, into a silver layer and load it into Redshift (our data warehouse).
 Finally, we use Quicksight to visualize the data.
 
+## Deployment Guides
+Choose your deployment path:
+- [Automated Walkthrough (Terraform)](./docs/walkthroughs/walkthrough_terraform.md) - Recommended.
+- [Manual Walkthrough (Console)](./docs/walkthroughs/walkthrough_manual.md) - Step-by-step console instructions.
 
-## Architecture Diagram
-
-```mermaid
-architecture-beta
-    group aws_account(cloud)[AWS Account]
-    service lambda(logos:aws-lambda)[AWS Lambda] in aws_account
-    service sm(logos:aws-secrets-manager)[Secrets Manager] in aws_account
-    service eb(logos:aws-eventbridge)[EventBridge] in aws_account
-    group vpc_source(cloud)[VPC Source] in aws_account
-    service rds(logos:aws-rds)[RDS MySQL] in vpc_source
-    group dms_group(cloud)[AWS DMS] in vpc_source
-    service source_ep(logos:aws-transfer-family)[Source EP] in dms_group
-    service rep_inst(logos:aws-database-migration-service)[Rep Instance] in dms_group
-    service target_ep(logos:aws-transfer-family)[Target EP] in dms_group
-    service s3_bronze(logos:aws-s3)[S3 Bronze] in aws_account
-    service s3_silver(logos:aws-s3)[S3 Silver] in aws_account
-    group sfn_workflow(cloud)[Step Functions Workflow] in aws_account
-    service glue_transform(logos:aws-glue)[Glue Transform] in sfn_workflow
-    service glue_load(logos:aws-glue)[Glue Load] in sfn_workflow
-    group vpc_wh(cloud)[VPC Warehouse] in aws_account
-    service vpce(logos:aws-privatelink)[VPC Endpoints] in vpc_wh
-    group redshift_group(cloud)[Redshift Gold] in vpc_wh
-    service rs_staging(database)[Staging] in redshift_group
-    service rs_target(database)[Target] in redshift_group
-    service qs(logos:aws-quicksight)[QuickSight] in aws_account
-    lambda:B -- T:rds
-    sm:B -- T:source_ep
-    rds:R -- L:source_ep
-    source_ep:R -- L:rep_inst
-    rep_inst:R -- L:target_ep
-    target_ep:B -- T:s3_bronze
-    s3_bronze:R -- L:glue_transform
-    glue_transform:R -- L:s3_silver
-    s3_silver:R -- L:glue_load
-    glue_load:B -- T:vpce
-    vpce:R -- L:rs_staging
-    rs_staging:B -- T:rs_target
-    rs_target:R -- L:qs
-```
-
-![Architecture Diagram](./docs/architecture/architecture_diagram.png)
-
-- [Security Design](./docs/SECURITY_DESIGN.md)
-- [Operations Guide](./docs/OPERATIONS_GUIDE.md)
+## Documentation
+- [Security Design](./docs/SECURITY_DESIGN.md) - Deep dive into IAM and Least Privilege.
+- [Operations Guide](./docs/OPERATIONS_GUIDE.md) - Functional logic and pipeline orchestration.
 
 We will be using the following services:
 
@@ -113,13 +78,6 @@ We will be using the following services:
 ├── terraform                     <-- Infrastructure as Code
 └── README.md
 ```
-
-## TODO
-
-* [x] Use UV for aws lambda packaging
-* [x] Add notes on project steps
-* [x] Automate initial setup with Terraform
-* [ ] Clean AWS resources
 
 ## References
 
