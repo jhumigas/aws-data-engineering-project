@@ -25,7 +25,7 @@ We use RDS to simulate an on-premise transactional source database.
     - Set `binlog_row_image = FULL`.
     - Attach to the RDS instance (reboot required to apply).
 - **Initialization**: 
-    - Run the DDL script found in `db/migration/V1__Initial_Schema.sql`.
+    - Run the DDL script found in `application_db_rds/migration/V1__Initial_Schema.sql`.
 - **CDC Configuration**:
     - Connect via SQL client and execute the binary logging retention command:
       ```sql
