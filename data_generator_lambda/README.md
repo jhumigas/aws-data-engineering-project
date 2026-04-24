@@ -21,4 +21,23 @@ Build the deployment package locally using the root control plane:
 ```bash
 make build-lambda
 ```
-The resulting package is automatically deployed via the Terraform Lambda module.
+
+### Manual Build
+If running without the Makefile, execute the following from this directory:
+```bash
+# 1. Install dependencies to a target folder
+uv pip install \
+  --no-installer-metadata \
+  --no-compile-bytecode \
+  --python-platform x86_64-manylinux2014 \
+  --python 3.13 \
+  --target build/ \
+  -r pyproject.toml
+
+# 2. Add handler logic
+cp lambda_function.py build/
+
+# 3. Create ZIP archive
+cd build && zip -r ../lambda_function.zip .
+```
+The resulting ZIP is deployed via the Terraform Lambda module.

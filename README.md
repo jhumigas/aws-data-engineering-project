@@ -71,7 +71,6 @@ We will be using the following services:
 ├── application_db_rds            <-- RDS (Source) DDL and setup scripts
 ├── data_generator_lambda         <-- Python Lambda for real-time data simulation
 ├── data_warehouse_redshift       <-- Redshift DDLs and SCD Type 2 Procedures
-├── db                            <-- Flyway migrations for RDS MySQL
 ├── docs
 │   ├── architecture              <-- Visual diagrams (Mermaid, Excalidraw, PNG)
 │   ├── superpowers              <-- Design specs and implementation plans

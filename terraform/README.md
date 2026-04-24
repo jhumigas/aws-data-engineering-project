@@ -25,4 +25,12 @@ make tf-init    # Initialize providers
 make tf-plan    # Preview changes
 make tf-apply   # Deploy infrastructure
 ```
+
+### Manual Terraform
+If running without the Makefile, use standard Terraform CLI commands:
+```bash
+terraform init
+terraform plan -out=tfplan
+terraform apply "tfplan"
+```
 The code is extensively documented with inline comments explaining design choices, particularly around security roles and CDC parameters.
