@@ -46,7 +46,7 @@ setup-rds: ## Run RDS migrations and CDC setup
 	$(eval DB_ENDPOINT := $(shell cd terraform && terraform output -raw rds_endpoint | cut -d: -f1))
 	$(eval DB_PASSWORD := $(shell cd terraform && terraform output -raw db_password))
 	@echo "Running Flyway migrations on RDS..."
-	FLYWAY_PASSWORD=$(DB_PASSWORD) bash db/migrate.sh $(DB_ENDPOINT) admin
+	FLYWAY_PASSWORD=$(DB_PASSWORD) bash application_db_rds/migrate.sh $(DB_ENDPOINT) admin
 	@echo "Setting CDC binlog retention..."
 	docker run --rm mysql:8.0 mysql -h $(DB_ENDPOINT) -u admin -p$(DB_PASSWORD) -e "CALL mysql.rds_set_configuration('binlog retention hours', 24);"
 

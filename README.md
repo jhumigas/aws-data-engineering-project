@@ -16,11 +16,19 @@ For a deep dive into the system's design, see the [Security Design](./docs/SECUR
 
 ## Pre-requisites
 
-Ideally you should be familiar with AWS, with some understand of networking, security etc.
-You should create a free AWS account if you don't have one already.
-Create an IAM user with admin access.
-Think about the cost of the services used in this project (set up budget), and clean up resources after you finish.
-You can use DBeaver or any SQL client to connect to the databases.
+### AWS Account Requirements
+- Create a free AWS account if you don't have one already.
+- Create an IAM user with **Admin access**.
+- Think about the cost of the services used (set up a budget) and clean up resources after you finish.
+
+### Local Tooling
+To deploy and orchestrate this project, you will need the following installed locally:
+- **Terraform (v1.0+)**: For infrastructure provisioning.
+- **AWS CLI**: Authenticated with your IAM user (`aws configure`).
+- **Docker**: For running Flyway migrations and local BI tools.
+- **Python 3.x & [uv](https://docs.astral.sh/uv/)**: For Lambda packaging and dependency management.
+- **jq**: For parsing JSON outputs in the `Makefile`.
+- **DBeaver** (or any SQL client): For connecting to RDS and Redshift.
 
 ## Architecture
 
