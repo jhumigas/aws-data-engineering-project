@@ -37,6 +37,13 @@ Stored Procedures in Redshift follow this 4-step sequence:
 - **BI/Analytics:** AWS QuickSight, Metabase (Local via Docker)
 - **Control Plane:** `Makefile`
 
+## Superpowers & Skills
+For complex tasks, use the following specialized workflows:
+- **`subagent-driven-development` / `executing-plans`**: Use these when implementing multi-step tasks defined in `docs/superpowers/plans/`.
+- **`systematic-debugging`**: Use when troubleshooting pipeline failures (e.g., Glue job timeouts, Redshift merge conflicts).
+- **`verification-before-completion`**: Always run verification steps (e.g., `make tf-outputs`, checking S3 files) before claiming a task is done.
+- **`brainstorming`**: Use before starting any major architectural changes or new feature implementations.
+
 ## Critical Commands
 
 ### Development Entry Points
@@ -78,6 +85,11 @@ cd terraform && terraform apply
 - **Secrets Manager:** All DB credentials must be retrieved via Secrets Manager. No hardcoding.
 - **Least Privilege:** Services are restricted by S3 prefix (e.g., Glue can only write to `silver/`).
 - **Networking:** Most services run within private subnets using VPC Endpoints (S3, Secrets Manager, Redshift, STS).
+
+## Troubleshooting (Quick Reference)
+- **SFN Failures:** Check `Execution History` for Glue job ID.
+- **Concurrency Errors:** `max_concurrent_runs` is capped at 5.
+- **Schema Errors:** Re-run Glue Crawlers (`make trigger-crawlers`) if columns are missing.
 
 ## File Boundaries
 - `terraform/`: Infrastructure as Code.
