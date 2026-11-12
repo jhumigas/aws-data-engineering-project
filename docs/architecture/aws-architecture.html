@@ -1,0 +1,362 @@
+<title>Medallion AWS Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an AWS deployment diagram drawn as one SVG (viewBox 1480x920, scrolls sideways on phones):
+   regional services on top (orchestration, S3 lake, Glue), the VPC below (RDS in public subnets,
+   Lambda, DMS, endpoints and Redshift in private subnets), shared services along the bottom.
+   Numbered data flow in gold and animated; orchestration in pink; support paths dashed grey.
+   Same night palette as the pipeline animation, single dark theme on purpose. */
+:root {
+  color-scheme: dark;
+  --bg: #07090d;
+  --grid: rgba(148, 163, 184, .07);
+  --surface: #0c1016;
+  --surface-2: #11161e;
+  --edge: rgba(148, 163, 184, .14);
+  --edge-strong: rgba(148, 163, 184, .26);
+  --ink: #e7edf4;
+  --ink-2: #b4c0cd;
+  --muted: #7b8898;
+
+  /* AWS-style service categories */
+  --compute: #f78e2c;
+  --database: #5a7cff;
+  --migration: #19b39a;
+  --analytics: #9b6bff;
+  --storage: #7fb02a;
+  --security: #e5485f;
+  --integration: #e8458b;
+  --management: #e83e8c;
+  --network: #8f6cf0;
+
+  --cloud: #c6d0db;
+  --region: #2cc2c4;
+  --vpc: #7fb02a;
+  --public: #7fb02a;
+  --private: #3b9be0;
+  --flow: #f2c14e;
+  --ctrl: #f472b6;
+
+  --font-body: "Geist", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+::selection { background: rgba(242, 193, 78, .35); color: #fff; }
+body {
+  background:
+    radial-gradient(circle at 1px 1px, var(--grid) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 36px 44px;
+  margin: 0;
+}
+.page { max-width: 1480px; margin: 0 auto; display: grid; gap: 22px; }
+header { display: grid; gap: 8px; }
+h1 { margin: 0; font: 600 clamp(28px, 4vw, 44px)/1.05 var(--font-body); letter-spacing: -.035em; text-wrap: balance; }
+.subtitle { margin: -2px 0 4px; font: 500 clamp(18px, 2.2vw, 24px)/1.2 var(--font-body); letter-spacing: -.02em; color: var(--flow); }
+.lede { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.5; max-width: 70ch; }
+.lede code { font: 500 13px var(--font-mono); color: var(--ink); }
+
+.scroller { overflow-x: auto; border-radius: 18px; scrollbar-color: var(--edge-strong) transparent; }
+svg.arch { display: block; width: 100%; min-width: 1100px; height: auto; }
+
+/* SVG text */
+.t-label { font: 500 13px var(--font-body); fill: var(--ink); }
+.t-sub { font: 400 11px var(--font-mono); fill: var(--muted); }
+.t-group { font: 500 13px var(--font-body); }
+.t-group-sub { font: 400 11px var(--font-mono); fill: var(--muted); }
+.t-badge { font: 600 11px var(--font-mono); fill: #1a1405; }
+.credit { font: 400 11px var(--font-mono); fill: var(--muted); }
+a:hover .credit { fill: var(--ink); text-decoration: underline; }
+.t-edge { font: 400 10.5px var(--font-mono); fill: var(--ink-2); }
+.t-edge.ctrl-label { fill: color-mix(in oklab, var(--ctrl) 70%, #fff); }
+
+.flow { stroke: var(--flow); stroke-width: 1.8; fill: none; stroke-dasharray: 6 6; }
+.ctrl { stroke: var(--ctrl); stroke-width: 1.4; fill: none; stroke-dasharray: 2 4; stroke-opacity: .85; }
+.support { stroke: rgba(180, 192, 205, .55); stroke-width: 1.3; fill: none; stroke-dasharray: 3 5; }
+.key .flow { animation: dash 1.1s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -12; } }
+@media (prefers-reduced-motion: reduce) { .key .flow { animation: none; } }
+
+/* Steps */
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px 28px; margin: 0; padding: 0; list-style: none; }
+.steps li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; font-size: 14px; line-height: 1.5; color: var(--ink-2); min-width: 0; }
+.steps li b { color: var(--ink); font-weight: 500; }
+.steps .n { width: 22px; height: 22px; border-radius: 50%; background: var(--flow); color: #1a1405; display: grid; place-items: center; font: 600 11px var(--font-mono); margin-top: 1px; }
+.steps .n.c { background: var(--ctrl); color: #1a0510; }
+.steps code { font: 500 12.5px var(--font-mono); color: var(--ink); }
+.key { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 12.5px; color: var(--muted); }
+.key span { display: inline-flex; align-items: center; gap: 8px; }
+.key svg { width: 34px; height: 8px; }
+</style>
+
+<div class="page">
+  <header>
+    <h1>AWS Architecture</h1>
+    <p class="subtitle">Medallion batch pipeline</p>
+    <p class="lede">How the data engineering project is deployed in <code>ca-central-1</code>, as provisioned by Terraform.</p>
+  </header>
+
+  <div class="scroller">
+    <svg class="arch" id="arch" viewBox="0 0 1480 920" role="img" aria-labelledby="arch-title">
+      <title id="arch-title">AWS deployment: Lambda writes to RDS MySQL, DMS replicates changes to S3 bronze, Glue transforms them to S3 silver and loads Redshift, Step Functions on an hourly EventBridge schedule orchestrates the loads and merges, and QuickSight reads the warehouse. Secrets Manager, CloudWatch and IAM support every service.</title>
+    </svg>
+  </div>
+
+  <ol class="steps">
+    <li><span class="n">1</span><span><b>Lambda</b> writes customers, products, orders and order lines into MySQL every 5 minutes.</span></li>
+    <li><span class="n">2</span><span><b>DMS</b> reads the MySQL binary log: a full load first, then every change.</span></li>
+    <li><span class="n">3</span><span>DMS writes each change as CSV, with an <code>Op</code> column, under <code>bronze/</code> through the S3 gateway endpoint.</span></li>
+    <li><span class="n">4</span><span><b>Glue</b> transform jobs read new bronze files (bookmarks) and write hashed Parquet under <code>silver/</code>.</span></li>
+    <li><span class="n">5</span><span>Glue load jobs copy silver into <code>sales.stage_*</code> tables in <b>Redshift</b> through a Glue connection.</span></li>
+    <li><span class="n">6</span><span>Stored procedures merge staging into SCD Type 2 dimensions: expire the old version, insert the new one.</span></li>
+    <li><span class="n">7</span><span><b>QuickSight</b> reads the gold tables for the sales dashboard.</span></li>
+    <li><span class="n c">⏱</span><span><b>EventBridge</b> starts the <b>Step Functions</b> state machine every hour: dimensions load and merge in parallel, then facts.</span></li>
+  </ol>
+  <div class="key">
+    <span><svg viewBox="0 0 34 8"><path d="M0 4h34" class="flow"/></svg>Data flow</span>
+    <span><svg viewBox="0 0 34 8"><path d="M0 4h34" class="ctrl"/></svg>Orchestration and schedules</span>
+    <span><svg viewBox="0 0 34 8"><path d="M0 4h34" class="support"/></svg>Catalog and credentials</span>
+  </div>
+</div>
+
+<script>
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("arch");
+  const el = (tag, attrs = {}, parent = svg) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    parent.append(n); return n;
+  };
+  const text = (x, y, str, cls, anchor = "middle", parent = svg, fill) => {
+    const t = el("text", { x, y, class: cls, "text-anchor": anchor, ...(fill ? { fill } : {}) }, parent);
+    t.textContent = str; return t;
+  };
+  const v = (name) => `var(--${name})`;
+
+  // ---------- Glyphs (24x24, stroke) ----------
+  const G = {
+    lambda: '<path d="M6 20l5.2-9.4"/><path d="M8 4h3l7 16"/>',
+    database: '<ellipse cx="12" cy="5.5" rx="7" ry="2.5"/><path d="M5 5.5v13c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-13"/><path d="M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>',
+    endpoint: '<circle cx="12" cy="12" r="7"/><path d="M12 8v8M8 12h8"/>',
+    task: '<path d="M4 7h11M4 12h16M4 17h9"/><path d="M17 4l3 3-3 3"/>',
+    bucket: '<path d="M4 6h16l-2 13.5a1.5 1.5 0 0 1-1.5 1.3h-9A1.5 1.5 0 0 1 6 19.5z"/><ellipse cx="12" cy="6" rx="8" ry="2.2"/>',
+    glue: '<path d="M4 5h16l-6 7v6l-4 2v-8z"/>',
+    catalog: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/>',
+    warehouse: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/>',
+    stage: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16"/><path d="M9 14h6"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    event: '<circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="20" r="2"/><path d="M7 7l3 3M17 7l-3 3M12 15v3"/>',
+    sfn: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/>',
+    secret: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v2"/>',
+    logs: '<path d="M3 12h4l2-5 4 10 2-5h6"/>',
+    iam: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><circle cx="12" cy="10" r="2.2"/><path d="M8.5 16c.8-1.6 2-2.4 3.5-2.4s2.7.8 3.5 2.4"/>',
+    shield: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',
+    globe: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.5 2.5 13.5 0 16M12 4c-2.5 2.5-2.5 13.5 0 16"/>',
+    users: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19c.8-3 3-4.6 5.5-4.6s4.7 1.6 5.5 4.6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.5 14.6c2.3.1 4 1.5 4.7 4.4"/>',
+    cloud: '<path d="M7 18h10a4 4 0 0 0 .6-8A6 6 0 0 0 6.2 9.5 4.3 4.3 0 0 0 7 18z"/>',
+    flag: '<path d="M6 21V4"/><path d="M6 4h11l-2 4 2 4H6"/>',
+    lock: '<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/>',
+  };
+  function glyph(name, x, y, size, color, parent = svg) {
+    const g = el("g", { transform: `translate(${x - size / 2},${y - size / 2}) scale(${size / 24})`, fill: "none", stroke: color, "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round" }, parent);
+    g.innerHTML = G[name]; return g;
+  }
+
+  const defs = el("defs");
+  defs.innerHTML = `
+    <marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f2c14e"/></marker>
+    <marker id="arrow-ctrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f472b6"/></marker>
+    <marker id="arrow-support" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="rgba(180,192,205,.75)"/></marker>
+    <linearGradient id="tile-shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>`;
+  const layerGroups = el("g"), layerRings = el("g"), layerEdges = el("g"), layerNodes = el("g"), layerBadges = el("g");
+
+  // ---------- Groups ----------
+  function group({ x, y, w, h, color, label, sub, icon, dashed = false, fill = "none", tag = true, lx, bottom = false }) {
+    el("rect", { x, y, width: w, height: h, rx: 10, fill, stroke: color, "stroke-width": 1.3, ...(dashed ? { "stroke-dasharray": "6 5" } : {}) }, layerGroups);
+    let tx = lx ?? x + 12;
+    const ty = bottom ? y + h - 12 : y + 20;
+    if (tag && icon) {
+      el("rect", { x, y, width: 30, height: 30, rx: 10, fill: color }, layerGroups);
+      el("rect", { x: x + 10, y, width: 20, height: 30, fill: color }, layerGroups);
+      el("rect", { x, y: y + 10, width: 30, height: 20, fill: color }, layerGroups);
+      glyph(icon, x + 15, y + 15, 18, "#07090d", layerGroups);
+      tx = x + 40;
+    }
+    const lt = text(tx, ty, label, "t-group", "start", layerGroups, color);
+    if (sub) text(tx + lt.getComputedTextLength() + 9, ty, sub, "t-group-sub", "start", layerGroups);
+  }
+
+  group({ x: 120, y: 20, w: 1240, h: 880, color: v("cloud"), label: "AWS Cloud", icon: "cloud" });
+  group({ x: 140, y: 60, w: 1200, h: 824, color: v("region"), label: "Region", sub: "ca-central-1", icon: "flag", dashed: true });
+  group({ x: 170, y: 345, w: 1080, h: 425, color: v("vpc"), label: "VPC", sub: "10.0.0.0/16", icon: "lock" });
+  group({ x: 210, y: 385, w: 1020, h: 125, color: v("public"), label: "Public subnets", sub: "10.0.1.0/24 · 10.0.2.0/24", fill: "rgba(127,176,42,.06)", tag: false });
+  group({ x: 210, y: 525, w: 1020, h: 230, color: v("private"), label: "Private subnets", sub: "10.0.10.0/24 · 10.0.11.0/24", fill: "rgba(59,155,224,.06)", tag: false, lx: 720 });
+  group({ x: 340, y: 580, w: 290, h: 160, color: v("migration"), label: "AWS DMS", sub: "dms.t3.medium", tag: false, fill: "rgba(25,179,154,.05)", lx: 422 });
+  group({ x: 790, y: 580, w: 160, h: 160, color: v("network"), label: "Interface endpoints", tag: false, fill: "rgba(143,108,240,.05)" });
+  group({ x: 1045, y: 580, w: 190, h: 160, color: v("analytics"), label: "Amazon Redshift", sub: "ra3.large", tag: false, fill: "rgba(155,107,255,.05)", bottom: true });
+
+  // ---------- Nodes ----------
+  const N = {};
+  function node(id, { x, y, icon, color, label, sub, size = 54, actor = false, side = "below", dashed = false }) {
+    const g = el("g", {}, layerNodes);
+    if (actor) {
+      el("circle", { cx: x, cy: y, r: size / 2, fill: "#11161e", stroke: "rgba(148,163,184,.35)", "stroke-width": 1.3 }, g);
+      glyph(icon, x, y, size * 0.5, "#e7edf4", g);
+    } else {
+      el("rect", { x: x - size / 2, y: y - size / 2, width: size, height: size, rx: size * 0.2, fill: color, ...(dashed ? { "fill-opacity": .55 } : {}) }, g);
+      el("rect", { x: x - size / 2, y: y - size / 2, width: size, height: size, rx: size * 0.2, fill: "url(#tile-shade)" }, g);
+      if (dashed) el("rect", { x: x - size / 2 - 4, y: y - size / 2 - 4, width: size + 8, height: size + 8, rx: size * 0.25, fill: "none", stroke: "rgba(180,192,205,.6)", "stroke-dasharray": "3 4" }, g);
+      glyph(icon, x, y, size * 0.52, "#ffffff", g);
+    }
+    if (side === "left") {
+      const lx = x - size / 2 - 12;
+      text(lx, y - 2, label, "t-label", "end", g);
+      if (sub) text(lx, y + 13, sub, "t-sub", "end", g);
+    } else if (side === "right") {
+      const lx = x + size / 2 + 12;
+      text(lx, y - 2, label, "t-label", "start", g);
+      if (sub) text(lx, y + 13, sub, "t-sub", "start", g);
+    } else if (label) {
+      const ly = y + size / 2 + 17;
+      text(x, ly, label, "t-label", "middle", g);
+      if (sub) text(x, ly + 15, sub, "t-sub", "middle", g);
+    }
+    N[id] = { x, y, r: size / 2, actor };
+  }
+
+  // Regional: orchestration
+  node("eb", { x: 250, y: 215, icon: "event", color: v("integration"), label: "EventBridge", sub: "2 schedules" });
+  node("sfn", { x: 420, y: 215, icon: "sfn", color: v("integration"), label: "Step Functions", sub: "ETL state machine" });
+
+  // Regional: lake and ETL
+  node("bronze", { x: 680, y: 215, icon: "bucket", color: v("storage"), label: "Amazon S3", sub: "bronze/ · CSV", side: "left" });
+  node("catalog", { x: 760, y: 140, icon: "catalog", color: v("analytics"), label: "Data Catalog", sub: "4 crawlers", size: 34, side: "right" });
+  node("glue-t", { x: 805, y: 215, icon: "glue", color: v("analytics"), label: "AWS Glue", sub: "transform jobs" });
+  node("silver", { x: 925, y: 215, icon: "bucket", color: v("storage"), label: "Amazon S3", sub: "silver/ · Parquet" });
+  node("glue-l", { x: 1050, y: 215, icon: "glue", color: v("analytics"), label: "AWS Glue", sub: "load jobs" });
+
+  // VPC
+  node("igw", { x: 330, y: 345, icon: "globe", color: v("network"), label: "", size: 30 });
+  text(352, 340, "Internet gateway", "t-sub", "start", layerNodes);
+  node("s3gw", { x: 680, y: 345, icon: "shield", color: v("network"), label: "", size: 30 });
+  text(702, 340, "S3 gateway endpoint", "t-sub", "start", layerNodes);
+
+  node("rds", { x: 400, y: 448, icon: "database", color: v("database"), label: "Amazon RDS", sub: "MySQL 8.0 · binlog ROW", side: "right" });
+  node("lambda", { x: 260, y: 660, icon: "lambda", color: v("compute"), label: "AWS Lambda", sub: "Python 3.13" });
+
+  node("dms-src", { x: 400, y: 660, icon: "endpoint", color: v("migration"), label: "Source", sub: "MySQL", size: 40 });
+  node("dms-task", { x: 485, y: 660, icon: "task", color: v("migration"), label: "Task", sub: "full load + CDC", size: 40 });
+  node("dms-tgt", { x: 570, y: 660, icon: "endpoint", color: v("migration"), label: "Target", sub: "S3 · CSV", size: 40 });
+
+  node("vpce-sm", { x: 835, y: 660, icon: "shield", color: v("network"), label: "Secrets", sub: "Manager", size: 40 });
+  node("vpce-sts", { x: 905, y: 660, icon: "shield", color: v("network"), label: "STS", sub: "", size: 40 });
+
+  node("stage", { x: 1105, y: 655, icon: "stage", color: v("analytics"), label: "stage_*", size: 44 });
+  node("gold", { x: 1190, y: 655, icon: "warehouse", color: v("analytics"), label: "dim · fact", size: 44 });
+
+  node("qs", { x: 1295, y: 655, icon: "chart", color: v("analytics"), label: "QuickSight", sub: "manual setup", size: 48, dashed: true });
+  node("analysts", { x: 1420, y: 655, icon: "users", label: "Analysts", sub: "dashboards", actor: true, size: 56 });
+
+  // Shared services
+  node("secrets", { x: 870, y: 815, icon: "secret", color: v("security"), label: "Secrets Manager", sub: "MySQL · Redshift creds", size: 46, side: "right" });
+  node("cw", { x: 420, y: 815, icon: "logs", color: v("management"), label: "CloudWatch", sub: "job and Lambda logs", size: 46, side: "right" });
+  node("iam", { x: 640, y: 815, icon: "iam", color: v("security"), label: "IAM", sub: "one role per service", size: 46, side: "right" });
+
+  // ---------- Edges ----------
+  function edge(points, kind = "flow", label, lx, ly, anchor = "middle") {
+    const d = "M" + points.map((p) => p.join(",")).join(" L");
+    el("path", { d, class: kind, "marker-end": `url(#arrow-${kind})` }, layerEdges);
+    if (label) text(lx, ly, label, kind === "ctrl" ? "t-edge ctrl-label" : "t-edge", anchor, layerEdges);
+  }
+  function badge(n, x, y, color = "#f2c14e") {
+    el("circle", { cx: x, cy: y, r: 11, fill: color, stroke: "#07090d", "stroke-width": 3 }, layerBadges);
+    text(x, y + 4, String(n), "t-badge", "middle", layerBadges);
+  }
+
+  // Main data flow
+  edge([[260, 632], [260, 448], [371, 448]], "flow"); badge(1, 260, 560);
+  edge([[400, 476], [400, 638]], "flow"); badge(2, 400, 560);
+  edge([[421, 660], [463, 660]], "flow");
+  edge([[506, 660], [548, 660]], "flow");
+  edge([[591, 660], [680, 660], [680, 244]], "flow"); badge(3, 680, 450);
+  edge([[708, 215], [776, 215]], "flow"); badge(4, 742, 215);
+  edge([[833, 215], [896, 215]], "flow");
+  edge([[953, 215], [1021, 215]], "flow");
+  edge([[1078, 215], [1105, 215], [1105, 631]], "flow", "JDBC · Glue connection", 1095, 465, "end"); badge(5, 1105, 560);
+  edge([[1128, 655], [1166, 655]], "flow"); badge(6, 1147, 655);
+  edge([[1213, 655], [1269, 655]], "flow"); badge(7, 1243, 655);
+  edge([[1320, 655], [1390, 655]], "flow");
+
+  // Orchestration and schedules
+  edge([[223, 215], [190, 215], [190, 660], [231, 660]], "ctrl", "rate(5 min)", 198, 300, "start");
+  edge([[278, 215], [391, 215]], "ctrl", "rate(1 hour)", 334, 205);
+  edge([[420, 187], [420, 112], [1050, 112], [1050, 185]], "ctrl", "startJobRun.sync", 520, 104);
+  edge([[1050, 112], [1190, 112], [1190, 631]], "ctrl", "Data API", 1200, 300, "start");
+  text(1200, 314, "CALL sp_merge_dim_*", "t-edge ctrl-label", "start", layerEdges);
+  badge("⏱", 420, 150, "#f472b6");
+
+  // Catalog and credentials
+  edge([[680, 187], [680, 140], [740, 140]], "support", "crawl", 672, 165, "end");
+  edge([[870, 742], [870, 789]], "support", "credentials", 878, 784, "start");
+
+  // ---------- Credit ----------
+  const link = el("a", { href: "https://www.linkedin.com/in/davidmugisha/", target: "_blank", rel: "noopener" });
+  text(1340, 912, "David Mugisha · linkedin.com/in/davidmugisha", "credit", "end", link);
+
+  // ---------- Motion: one change travels the numbered route ----------
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const LOOP = 7.7;          // seconds per trip; a multiple of the 1.1 s dash cycle so it loops seamlessly
+  const ROUTE = [[260, 660], [260, 448], [400, 448], [400, 660], [680, 660], [680, 215], [1105, 215], [1105, 655], [1420, 655]];
+  const layerMotion = el("g");
+  const route = el("path", { d: "M" + ROUTE.map((p) => p.join(",")).join(" L"), fill: "none", stroke: "none" }, layerMotion);
+  const len = route.getTotalLength();
+  const TAIL = 90;
+  const trail = el("path", { d: route.getAttribute("d"), fill: "none", stroke: "#f2c14e", "stroke-width": 4, "stroke-linecap": "round", "stroke-opacity": .75, "stroke-dasharray": `${TAIL} ${len * 2}` }, layerMotion);
+  const halo = el("circle", { r: 17, fill: "#f2c14e", "fill-opacity": .22 }, layerMotion);
+  const dot = el("circle", { r: 7, fill: "#f2c14e", stroke: "#07090d", "stroke-width": 2.5 }, layerMotion);
+
+  // Services the change passes through get a ring as it arrives
+  const STOPS = ["lambda", "rds", "dms-src", "dms-task", "dms-tgt", "bronze", "glue-t", "silver", "glue-l", "stage", "gold", "qs", "analysts"].map((id) => {
+    const n = N[id];
+    let best = 0, bestD = Infinity;
+    for (let s = 0; s <= len; s += 4) {
+      const q = route.getPointAtLength(s), d = Math.hypot(q.x - n.x, q.y - n.y);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    const ring = el("rect", { x: n.x - n.r - 5, y: n.y - n.r - 5, width: 2 * n.r + 10, height: 2 * n.r + 10, rx: (n.r + 5) * (n.actor ? 1 : 0.42), fill: "rgba(242,193,78,.10)", stroke: "#f2c14e", "stroke-width": 2.5, opacity: 0 }, layerRings);
+    return { s: best, ring };
+  });
+  const flows = [...svg.querySelectorAll("path.flow")];
+
+  const t0 = performance.now();
+  function frame(now) {
+    const t = ((now - t0) / 1000) % LOOP;
+    const sNow = (t / LOOP) * len;
+    const q = route.getPointAtLength(sNow);
+    dot.setAttribute("cx", q.x); dot.setAttribute("cy", q.y);
+    halo.setAttribute("cx", q.x); halo.setAttribute("cy", q.y);
+    trail.setAttribute("stroke-dashoffset", TAIL - sNow);
+    // fade the change in and out at the ends so the loop seam is invisible
+    const edgeFade = Math.min(1, sNow / 40, (len - sNow) / 40);
+    dot.setAttribute("opacity", edgeFade); halo.setAttribute("opacity", edgeFade); trail.setAttribute("opacity", edgeFade);
+    for (const st of STOPS) {
+      const since = sNow - st.s;
+      const o = since >= 0 && since < 160 ? 1 - since / 160 : 0;
+      st.ring.setAttribute("opacity", o.toFixed(3));
+    }
+    const off = -((now - t0) / 1000 / 1.1) * 12;
+    for (const f of flows) f.setAttribute("stroke-dashoffset", off.toFixed(2));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+});
+</script>

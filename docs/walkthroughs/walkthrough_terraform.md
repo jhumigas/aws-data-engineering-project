@@ -2,6 +2,10 @@
 
 This guide explains how to deploy the AWS Data Engineering Project infrastructure using the provided Terraform code and the centralized `Makefile` control plane.
 
+## What You Deploy
+
+![AWS architecture as provisioned by Terraform](../architecture/aws-architecture.png)
+
 ## Prerequisites
 - **Terraform** installed (v1.0+).
 - **AWS CLI** configured with appropriate credentials (`aws configure`).

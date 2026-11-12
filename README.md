@@ -12,7 +12,11 @@ However, there start a challenge: as the startup scale, they needs more analytic
 We build the different services required from ingesting data in our bronze layer to exposing it into a dashboard in QuickSight (also explored Metabase and Apache Superset). 
 
 For a deep dive into the system's design, see the [Security Design](./docs/SECURITY_DESIGN.md) and [Operations Guide](./docs/OPERATIONS_GUIDE.md).
-![Orchestrator](./docs/architecture/orchestrator.v1.png)
+
+![Animated data flow: an app writes to MySQL, DMS lands every change in S3 bronze, and an hourly Step Functions run promotes it through silver into Redshift gold, keeping history with SCD Type 2](./docs/architecture/pipeline-animation.gif)
+
+The animation follows one story: a customer, a product and an order land in bronze, the hourly run promotes them to gold, then a phone number change makes the next run expire the old customer row and insert a new version.
+The interactive version, with pause and step controls, is in [docs/architecture/pipeline-animation.html](./docs/architecture/pipeline-animation.html).
 
 ## Pre-requisites
 
@@ -32,12 +36,16 @@ To deploy and orchestrate this project, you will need the following installed lo
 
 ## Architecture
 
-![Architecture Diagram](./docs/architecture/architecture_diagram.png)
+![AWS architecture: Lambda, RDS MySQL, DMS, S3 bronze and silver, Glue, Redshift and QuickSight, orchestrated by EventBridge and Step Functions](./docs/architecture/aws-architecture.gif)
+
+The interactive diagram is in [docs/architecture/aws-architecture.html](./docs/architecture/aws-architecture.html).
 
 In the diagram above, we have simulated an on-premise MySQL database using RDS and Lambda (for data generation).
 The actual data pipeline starts with DMS replicating data using CDC to Amazon S3 in csv format (this is the raw zone).
 Then we use AWS Glue to process the data, into a silver layer and load it into Redshift (our data warehouse).
 Finally, we use Quicksight to visualize the data.
+
+![Step Functions orchestrator](./docs/architecture/orchestrator.v1.png)
 
 ## Deployment Guides
 Choose your deployment path:
