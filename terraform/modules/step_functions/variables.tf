@@ -23,3 +23,15 @@ variable "redshift_cluster_identifier" {
 variable "redshift_database" {
   type = string
 }
+
+variable "redshift_db_user" {
+  type        = string
+  description = "Database user the Redshift Data API runs the merge procedures as"
+  default     = "adminuser"
+}
+
+variable "execution_timeout_seconds" {
+  type        = number
+  description = "Upper bound for one pipeline execution, so a stuck poll loop cannot run forever"
+  default     = 7200
+}
