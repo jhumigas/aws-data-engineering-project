@@ -106,7 +106,7 @@ a:hover .credit { fill: var(--ink); text-decoration: underline; }
 
   <div class="scroller">
     <svg class="arch" id="arch" viewBox="0 0 1480 920" role="img" aria-labelledby="arch-title">
-      <title id="arch-title">AWS deployment: Lambda writes to RDS MySQL, DMS replicates changes to S3 bronze, Glue transforms them to S3 silver and loads Redshift, Step Functions on an hourly EventBridge schedule orchestrates the loads and merges, and QuickSight reads the warehouse. Secrets Manager, CloudWatch and IAM support every service.</title>
+      <title id="arch-title">AWS deployment: Lambda writes to RDS MySQL, DMS replicates changes to S3 bronze, Glue transforms them to S3 silver and loads Redshift, Step Functions on an hourly EventBridge schedule runs the crawlers, transforms, loads and awaited merges, and QuickSight reads the warehouse. Secrets Manager, CloudWatch and IAM support every service.</title>
     </svg>
   </div>
 
@@ -116,9 +116,9 @@ a:hover .credit { fill: var(--ink); text-decoration: underline; }
     <li><span class="n">3</span><span>DMS writes each change as CSV, with an <code>Op</code> column, under <code>bronze/</code> through the S3 gateway endpoint.</span></li>
     <li><span class="n">4</span><span><b>Glue</b> transform jobs read new bronze files (bookmarks) and write hashed Parquet under <code>silver/</code>.</span></li>
     <li><span class="n">5</span><span>Glue load jobs copy silver into <code>sales.stage_*</code> tables in <b>Redshift</b> through a Glue connection.</span></li>
-    <li><span class="n">6</span><span>Stored procedures merge staging into SCD Type 2 dimensions: expire the old version, insert the new one.</span></li>
+    <li><span class="n">6</span><span>Stored procedures merge staging into gold: SCD Type 2 dimensions (expire the old version, insert the new one), then fact upserts.</span></li>
     <li><span class="n">7</span><span><b>QuickSight</b> reads the gold tables for the sales dashboard.</span></li>
-    <li><span class="n c">⏱</span><span><b>EventBridge</b> starts the <b>Step Functions</b> state machine every hour: dimensions load and merge in parallel, then facts.</span></li>
+    <li><span class="n c">⏱</span><span><b>EventBridge</b> starts the <b>Step Functions</b> state machine every hour: crawlers, then transforms, then dimensions load and merge in parallel, then facts. Each merge is awaited.</span></li>
   </ol>
   <div class="key">
     <span><svg viewBox="0 0 34 8"><path d="M0 4h34" class="flow"/></svg>Data flow</span>
@@ -239,7 +239,7 @@ a:hover .credit { fill: var(--ink); text-decoration: underline; }
 
   // Regional: lake and ETL
   node("bronze", { x: 680, y: 215, icon: "bucket", color: v("storage"), label: "Amazon S3", sub: "bronze/ · CSV", side: "left" });
-  node("catalog", { x: 760, y: 140, icon: "catalog", color: v("analytics"), label: "Data Catalog", sub: "4 crawlers", size: 34, side: "right" });
+  node("catalog", { x: 680, y: 140, icon: "catalog", color: v("analytics"), label: "Data Catalog", sub: "4 crawlers", size: 34, side: "right" });
   node("glue-t", { x: 805, y: 215, icon: "glue", color: v("analytics"), label: "AWS Glue", sub: "transform jobs" });
   node("silver", { x: 925, y: 215, icon: "bucket", color: v("storage"), label: "Amazon S3", sub: "silver/ · Parquet" });
   node("glue-l", { x: 1050, y: 215, icon: "glue", color: v("analytics"), label: "AWS Glue", sub: "load jobs" });
@@ -299,13 +299,17 @@ a:hover .credit { fill: var(--ink); text-decoration: underline; }
   // Orchestration and schedules
   edge([[223, 215], [190, 215], [190, 660], [231, 660]], "ctrl", "rate(5 min)", 198, 300, "start");
   edge([[278, 215], [391, 215]], "ctrl", "rate(1 hour)", 334, 205);
-  edge([[420, 187], [420, 112], [1050, 112], [1050, 185]], "ctrl", "startJobRun.sync", 520, 104);
-  edge([[1050, 112], [1190, 112], [1190, 631]], "ctrl", "Data API", 1200, 300, "start");
-  text(1200, 314, "CALL sp_merge_dim_*", "t-edge ctrl-label", "start", layerEdges);
+  edge([[420, 187], [420, 112], [1050, 112], [1050, 185]], "ctrl", "startCrawler · startJobRun.sync", 520, 104);
+  edge([[680, 112], [680, 120]], "ctrl");
+  edge([[805, 112], [805, 185]], "ctrl");
+  edge([[1050, 112], [1190, 112], [1190, 631]], "ctrl", "Data API", 1200, 286, "start");
+  text(1200, 300, "CALL sp_merge_dim_*", "t-edge ctrl-label", "start", layerEdges);
+  text(1200, 314, "CALL sp_merge_fact_*", "t-edge ctrl-label", "start", layerEdges);
+  text(1200, 328, "+ describeStatement", "t-edge ctrl-label", "start", layerEdges);
   badge("⏱", 420, 150, "#f472b6");
 
   // Catalog and credentials
-  edge([[680, 187], [680, 140], [740, 140]], "support", "crawl", 672, 165, "end");
+  edge([[680, 187], [680, 160]], "support", "crawl", 672, 178, "end");
   edge([[870, 742], [870, 789]], "support", "credentials", 878, 784, "start");
 
   // ---------- Credit ----------
