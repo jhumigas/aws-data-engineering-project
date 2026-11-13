@@ -22,3 +22,12 @@ data_generator_lambda/build/
 # tmp
 tmp/
 .DS_Store
+
+.agents
+.gemini
+
+# AI Tools
+.databricks
+.pi
+.claude
+.impeccable
