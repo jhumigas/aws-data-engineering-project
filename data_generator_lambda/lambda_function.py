@@ -111,7 +111,9 @@ def update_customers(cursor):
 
 # Delete customer data
 def delete_customers(cursor):
-    cursor.execute("SELECT customerId FROM Customer")
+    # Only customers without orders can be deleted: Orders.orderCustomerId is a foreign key to Customer.
+    cursor.execute("""SELECT c.customerId FROM Customer c
+                      WHERE NOT EXISTS (SELECT 1 FROM Orders o WHERE o.orderCustomerId = c.customerId)""")
     customer_ids = [row[0] for row in cursor.fetchall()]
 
     if customer_ids:
