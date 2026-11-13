@@ -10,10 +10,10 @@ resource "aws_security_group" "dms" {
 
   # Allow all internal traffic within the SG for management/coordination
   ingress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    self        = true
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    self      = true
   }
 
   # Allow traffic from the entire VPC CIDR for connectivity to endpoints
@@ -21,7 +21,7 @@ resource "aws_security_group" "dms" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["10.0.0.0/16"] 
+    cidr_blocks = ["10.0.0.0/16"]
   }
 
   # Allow all outbound traffic to reach RDS and S3/Secrets Manager endpoints
@@ -58,8 +58,8 @@ resource "aws_dms_replication_subnet_group" "main" {
 resource "aws_dms_replication_instance" "main" {
   replication_instance_id    = "${var.project_name}-${var.environment}-dms-instance"
   replication_instance_class = "dms.t3.medium" # Minimum class for stable CDC
-  allocated_storage          = 20 # Storage for logs and swap space
-  
+  allocated_storage          = 20              # Storage for logs and swap space
+
   replication_subnet_group_id = aws_dms_replication_subnet_group.main.id
   vpc_security_group_ids      = [aws_security_group.dms.id]
 
@@ -77,7 +77,7 @@ resource "aws_dms_endpoint" "source" {
   endpoint_id   = "${var.project_name}-${var.environment}-source-endpoint"
   endpoint_type = "source"
   engine_name   = "mysql"
-  
+
   # Security/Auth: Fetch connection info directly from Secrets Manager
   secrets_manager_arn             = var.source_secret_arn
   secrets_manager_access_role_arn = aws_iam_role.dms_secrets_role.arn
@@ -119,8 +119,8 @@ resource "aws_iam_policy" "dms_secrets_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["secretsmanager:GetSecretValue"]
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
         Resource = [var.source_secret_arn]
       }
     ]
@@ -140,16 +140,16 @@ resource "aws_dms_endpoint" "target" {
   endpoint_id   = "${var.project_name}-${var.environment}-target-endpoint"
   endpoint_type = "target"
   engine_name   = "s3"
-  
+
   # Landing Zone Settings
   s3_settings {
-    bucket_name             = var.target_bucket_name
-    bucket_folder           = "bronze" # Raw data lands here
-    service_access_role_arn = aws_iam_role.dms_s3_role.arn
-    data_format             = "csv"
-    timestamp_column_name   = "db_timestamp" # Metadata column for CDC tracking
-    add_column_name         = true           # Ensure headers are included in CSVs
-    include_op_for_full_load = true          # Include 'Op' column even in full load files
+    bucket_name              = var.target_bucket_name
+    bucket_folder            = "bronze" # Raw data lands here
+    service_access_role_arn  = aws_iam_role.dms_s3_role.arn
+    data_format              = "csv"
+    timestamp_column_name    = "db_timestamp" # Metadata column for CDC tracking
+    add_column_name          = true           # Ensure headers are included in CSVs
+    include_op_for_full_load = true           # Include 'Op' column even in full load files
   }
 
   tags = {
@@ -227,21 +227,21 @@ resource "aws_security_group_rule" "rds_ingress_dms" {
 # ===================================================================
 # Replicates all tables from 'dev' schema using Full Load + CDC.
 resource "aws_dms_replication_task" "main" {
-  replication_task_id      = "${var.project_name}-${var.environment}-replication-task"
-  migration_type           = "full-load-and-cdc" # Capture initial data and ongoing changes
-  
+  replication_task_id = "${var.project_name}-${var.environment}-replication-task"
+  migration_type      = "full-load-and-cdc" # Capture initial data and ongoing changes
+
   # Table Selection: Include everything from 'dev' schema
-  table_mappings           = jsonencode({
+  table_mappings = jsonencode({
     rules = [
       {
-        "rule-type": "selection",
-        "rule-id": "1",
-        "rule-name": "1",
-        "object-locator": {
-          "schema-name": "dev",
-          "table-name": "%"
+        "rule-type" : "selection",
+        "rule-id" : "1",
+        "rule-name" : "1",
+        "object-locator" : {
+          "schema-name" : "dev",
+          "table-name" : "%"
         },
-        "rule-action": "include"
+        "rule-action" : "include"
       }
     ]
   })
@@ -249,9 +249,9 @@ resource "aws_dms_replication_task" "main" {
   replication_instance_arn = aws_dms_replication_instance.main.replication_instance_arn
   source_endpoint_arn      = aws_dms_endpoint.source.endpoint_arn
   target_endpoint_arn      = aws_dms_endpoint.target.endpoint_arn
-  
+
   # Start manually after schema is ready (handled by null_resource in main.tf)
-  start_replication_task = false 
+  start_replication_task = false
 
   replication_task_settings = jsonencode({
     Logging = {

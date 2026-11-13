@@ -87,11 +87,11 @@ resource "aws_redshift_cluster" "main" {
   master_password    = random_password.password.result
   node_type          = "ra3.large" # Changed for availability
   cluster_type       = "single-node"
-  
+
   cluster_subnet_group_name = aws_redshift_subnet_group.main.name
   vpc_security_group_ids    = [aws_security_group.redshift.id]
   iam_roles                 = [aws_iam_role.redshift_role.arn]
-  
+
   skip_final_snapshot = true
   publicly_accessible = false
 
@@ -106,12 +106,12 @@ resource "aws_redshift_cluster" "main" {
 
 # Secrets Manager for Redshift
 resource "aws_secretsmanager_secret" "redshift_credentials" {
-  name = "${var.project_name}/${var.environment}/redshift-credentials"
+  name                    = "${var.project_name}/${var.environment}/redshift-credentials"
   recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "redshift_credentials" {
-  secret_id     = aws_secretsmanager_secret.redshift_credentials.id
+  secret_id = aws_secretsmanager_secret.redshift_credentials.id
   secret_string = jsonencode({
     username            = aws_redshift_cluster.main.master_username
     password            = aws_redshift_cluster.main.master_password
