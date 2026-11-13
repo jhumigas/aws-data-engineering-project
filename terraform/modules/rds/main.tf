@@ -27,7 +27,7 @@ resource "aws_security_group" "rds" {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # Inbound Rule: Allow the SG to reach itself (for internal management)
@@ -89,17 +89,17 @@ resource "aws_db_instance" "main" {
   engine            = "mysql"
   engine_version    = "8.0"
   instance_class    = "db.t3.micro" # Free tier eligible instance
-  allocated_storage = 20 # Standard disk space for small-scale dev
+  allocated_storage = 20            # Standard disk space for small-scale dev
   storage_type      = "gp2"
   username          = "admin"
   password          = var.db_password
   db_name           = "dev" # Default database schema
 
   # Advanced Configuration
-  parameter_group_name    = aws_db_parameter_group.mysql_cdc.name
-  db_subnet_group_name    = aws_db_subnet_group.main.name
-  vpc_security_group_ids  = [aws_security_group.rds.id]
-  
+  parameter_group_name   = aws_db_parameter_group.mysql_cdc.name
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
   # Operational Settings
   skip_final_snapshot     = true # Speeds up destruction during testing
   publicly_accessible     = true # Allows local DBeaver connection for demo

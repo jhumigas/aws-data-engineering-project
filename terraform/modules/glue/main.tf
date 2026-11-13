@@ -39,16 +39,16 @@ resource "aws_iam_policy" "glue_policy" {
         ]
       },
       {
-        Effect = "Allow"
-        Action = ["secretsmanager:GetSecretValue"]
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
         Resource = [var.redshift_secret_arn]
       },
       {
         Effect = "Allow"
         Action = [
-            "logs:CreateLogGroup",
-            "logs:CreateLogStream",
-            "logs:PutLogEvents"
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
         ]
         Resource = "arn:aws:logs:*:*:*"
       }
@@ -96,12 +96,12 @@ resource "aws_security_group" "glue" {
 
 # Allow Redshift access from Glue
 resource "aws_security_group_rule" "redshift_ingress_glue" {
-    type = "ingress"
-    from_port = 5439
-    to_port = 5439
-    protocol = "tcp"
-    source_security_group_id = aws_security_group.glue.id
-    security_group_id        = var.redshift_security_group_id
+  type                     = "ingress"
+  from_port                = 5439
+  to_port                  = 5439
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.glue.id
+  security_group_id        = var.redshift_security_group_id
 }
 
 # ===================================================================
@@ -117,7 +117,7 @@ resource "aws_glue_catalog_database" "main" {
 # Automatically uploads all Python scripts to the scripts/ folder.
 resource "aws_s3_object" "scripts" {
   for_each = fileset("${path.module}/../../../etl_glue_jobs", "**/*.py")
-  
+
   bucket = var.bucket_name
   key    = "scripts/${basename(each.value)}"
   source = "${path.module}/../../../etl_glue_jobs/${each.value}"
@@ -130,7 +130,7 @@ resource "aws_s3_object" "scripts" {
 # Configures the JDBC connection for loading data into the warehouse.
 resource "aws_glue_connection" "redshift" {
   name = "redshift-connection"
-  
+
   connection_properties = {
     JDBC_CONNECTION_URL = "jdbc:redshift://${var.redshift_endpoint}/dev"
     SECRET_ID           = var.redshift_secret_arn
@@ -181,7 +181,7 @@ resource "aws_glue_crawler" "tables" {
   s3_target {
     path = "s3://${var.bucket_name}/bronze/dev/${each.key}/"
   }
-  
+
   tags = {
     Name = "${var.project_name}-${var.environment}-crawler-${each.key}"
   }
@@ -192,14 +192,14 @@ resource "aws_glue_crawler" "tables" {
 # ===================================================================
 locals {
   etl_jobs = {
-    "raw_customer_etl_job"      = { file = "transform/raw_customer_etl_job.py", table = "stage_dim_customer" }
-    "raw_orderdetails_etl_job"  = { file = "transform/raw_orderdetails_etl_job.py", table = "stage_fact_order_details" }
-    "raw_orders_etl_job"        = { file = "transform/raw_orders_etl_job.py", table = "stage_fact_orders" }
-    "raw_product_etl_job"       = { file = "transform/raw_product_etl_job.py", table = "stage_dim_product" }
-    "load_processed_customers"  = { file = "load/load_processed_customers_job.py", table = "stage_dim_customer" }
-    "load_processed_orderdetails"= { file = "load/load_processed_orderdetails_job.py", table = "stage_fact_order_details" }
-    "load_processed_orders"     = { file = "load/load_processed_orders_job.py", table = "stage_fact_orders" }
-    "load_processed_products"   = { file = "load/load_processed_products.py", table = "stage_dim_product" }
+    "raw_customer_etl_job"        = { file = "transform/raw_customer_etl_job.py", table = "stage_dim_customer" }
+    "raw_orderdetails_etl_job"    = { file = "transform/raw_orderdetails_etl_job.py", table = "stage_fact_order_details" }
+    "raw_orders_etl_job"          = { file = "transform/raw_orders_etl_job.py", table = "stage_fact_orders" }
+    "raw_product_etl_job"         = { file = "transform/raw_product_etl_job.py", table = "stage_dim_product" }
+    "load_processed_customers"    = { file = "load/load_processed_customers_job.py", table = "stage_dim_customer" }
+    "load_processed_orderdetails" = { file = "load/load_processed_orderdetails_job.py", table = "stage_fact_order_details" }
+    "load_processed_orders"       = { file = "load/load_processed_orders_job.py", table = "stage_fact_orders" }
+    "load_processed_products"     = { file = "load/load_processed_products.py", table = "stage_dim_product" }
   }
 }
 
@@ -213,7 +213,7 @@ resource "aws_glue_job" "job" {
   command {
     script_location = "s3://${var.bucket_name}/scripts/${basename(each.value.file)}"
   }
-  
+
   default_arguments = {
     "--job-language"        = "python"
     "--TempDir"             = "s3://${var.bucket_name}/temporary/"
