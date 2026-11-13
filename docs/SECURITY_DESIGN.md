@@ -55,6 +55,11 @@ sequenceDiagram
 
 To allow the **Step Functions Orchestrator** to trigger Redshift Stored Procedures without manual passwords, we granted:
 - `redshift:GetClusterCredentials`
-- `redshift-data:ExecuteStatement`
+- `redshift-data:ExecuteStatement`: To start each merge procedure.
+- `redshift-data:DescribeStatement`: To poll each merge until it finishes, so failures fail the execution.
+
+To run the full pipeline, the orchestrator role can also start and poll Glue:
+- `glue:StartCrawler` and `glue:GetCrawler`: To refresh the bronze Data Catalog tables.
+- `glue:StartJobRun`, `glue:GetJobRun`, `glue:GetJobRuns` and `glue:BatchStopJobRun`: To run the transform and load jobs synchronously.
 
 This enables **IAM-based authentication** for the entire control plane, removing the need to manage database users for orchestration logic.

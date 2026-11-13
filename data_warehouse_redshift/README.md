@@ -11,8 +11,9 @@ SQL scripts and stored procedures required to initialize and maintain the Amazon
 .
 ├── cleanup                       <-- Scripts to purge data for testing
 ├── ddl                           <-- Schema and Table creation scripts
-├── stored_procedures             <-- PL/pgSQL SCD Type 2 logic
+├── stored_procedures             <-- PL/pgSQL merges: SCD Type 2 dimensions, fact upserts
 ├── validation                    <-- Data integrity and count checks
+├── run_sql.sh                    <-- Runs SQL via the Data API and waits for each statement
 └── README.md
 ```
 
@@ -21,6 +22,9 @@ These scripts are automatically applied during the warehouse initialization phas
 ```bash
 make setup-redshift
 ```
+The target runs every file through `run_sql.sh`, in order, and waits for each one.
+It stops on the first Redshift error and prints it.
+`ddl/schema_database.sql` is skipped, because `CREATE DATABASE` cannot run inside the Data API transaction.
 
 ### Manual Initialization
 To manually initialize objects without the Makefile, use the **AWS Redshift Data API**:
@@ -36,4 +40,5 @@ aws redshift-data execute-statement \
 # Repeat for DDL and Stored Procedure files:
 aws redshift-data execute-statement ... --sql "$(cat path/to/file.sql)"
 ```
-The stored procedures are also triggered as part of the main ETL Step Functions orchestration to perform automated SCD Type 2 merges.
+The stored procedures are also triggered as part of the main ETL Step Functions orchestration.
+The dimension procedures (`sp_merge_dim_*`) perform SCD Type 2 merges, and the fact procedures (`sp_merge_fact_*`) upsert the latest version of each order and order line.
