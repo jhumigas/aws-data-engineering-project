@@ -19,10 +19,6 @@ CREATE TABLE sales.dim_product (
 -------------------------------->
 ---Create Product staging table
 
-TRUNCATE TABLE sales.stage_dim_product;
-
-drop table sales.stage_dim_product;
-
 CREATE TABLE sales.stage_dim_product (
     cdc_operation character varying(50) ENCODE lzo,
     product_id character varying(64) NOT NULL ENCODE lzo distkey,
