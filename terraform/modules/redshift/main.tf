@@ -3,23 +3,32 @@ resource "aws_security_group" "redshift" {
   description = "Security group for Redshift cluster"
   vpc_id      = var.vpc_id
 
-  ingress {
-    from_port   = 5439
-    to_port     = 5439
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr] # Allow access from VPC (Glue/Lambda/EC2)
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # All rules are standalone aws_security_group_rule resources below.
+  # Inline rules cannot be mixed with them: the Glue module attaches its own
+  # ingress rule to this group, and inline rules would strip it on every apply.
 
   tags = {
     Name = "${var.project_name}-${var.environment}-redshift-sg"
   }
+}
+
+# Allow access from the VPC (Glue/Lambda/EC2)
+resource "aws_security_group_rule" "redshift_ingress_vpc" {
+  type              = "ingress"
+  from_port         = 5439
+  to_port           = 5439
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.redshift.id
+}
+
+resource "aws_security_group_rule" "redshift_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.redshift.id
 }
 
 resource "aws_redshift_subnet_group" "main" {
@@ -87,11 +96,11 @@ resource "aws_redshift_cluster" "main" {
   master_password    = random_password.password.result
   node_type          = "ra3.large" # Changed for availability
   cluster_type       = "single-node"
-  
+
   cluster_subnet_group_name = aws_redshift_subnet_group.main.name
   vpc_security_group_ids    = [aws_security_group.redshift.id]
   iam_roles                 = [aws_iam_role.redshift_role.arn]
-  
+
   skip_final_snapshot = true
   publicly_accessible = false
 
@@ -106,12 +115,12 @@ resource "aws_redshift_cluster" "main" {
 
 # Secrets Manager for Redshift
 resource "aws_secretsmanager_secret" "redshift_credentials" {
-  name = "${var.project_name}/${var.environment}/redshift-credentials"
+  name                    = "${var.project_name}/${var.environment}/redshift-credentials"
   recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "redshift_credentials" {
-  secret_id     = aws_secretsmanager_secret.redshift_credentials.id
+  secret_id = aws_secretsmanager_secret.redshift_credentials.id
   secret_string = jsonencode({
     username            = aws_redshift_cluster.main.master_username
     password            = aws_redshift_cluster.main.master_password

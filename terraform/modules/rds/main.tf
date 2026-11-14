@@ -21,34 +21,44 @@ resource "aws_security_group" "rds" {
   description = "Security group for RDS instance"
   vpc_id      = var.vpc_id
 
-  # Inbound Rule: Allow MySQL traffic from anywhere (Demo/Walkthrough purposes)
-  # In production, this would be restricted to specific application security groups.
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
-  }
-
-  # Inbound Rule: Allow the SG to reach itself (for internal management)
-  ingress {
-    from_port = 3306
-    to_port   = 3306
-    protocol  = "tcp"
-    self      = true
-  }
-
-  # Outbound Rule: Allow all traffic for updates and external integration
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # All rules are standalone aws_security_group_rule resources below.
+  # Inline rules cannot be mixed with them: other modules (DMS, Lambda) attach
+  # their own ingress rules to this group, and inline rules would strip those on every apply.
 
   tags = {
     Name = "${var.project_name}-${var.environment}-rds-sg"
   }
+}
+
+# Inbound Rule: Allow MySQL traffic from anywhere (Demo/Walkthrough purposes)
+# In production, this would be restricted to specific application security groups.
+resource "aws_security_group_rule" "rds_ingress_public" {
+  type              = "ingress"
+  from_port         = 3306
+  to_port           = 3306
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.rds.id
+}
+
+# Inbound Rule: Allow the SG to reach itself (for internal management)
+resource "aws_security_group_rule" "rds_ingress_self" {
+  type              = "ingress"
+  from_port         = 3306
+  to_port           = 3306
+  protocol          = "tcp"
+  self              = true
+  security_group_id = aws_security_group.rds.id
+}
+
+# Outbound Rule: Allow all traffic for updates and external integration
+resource "aws_security_group_rule" "rds_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.rds.id
 }
 
 # ===================================================================
@@ -89,17 +99,17 @@ resource "aws_db_instance" "main" {
   engine            = "mysql"
   engine_version    = "8.0"
   instance_class    = "db.t3.micro" # Free tier eligible instance
-  allocated_storage = 20 # Standard disk space for small-scale dev
+  allocated_storage = 20            # Standard disk space for small-scale dev
   storage_type      = "gp2"
   username          = "admin"
   password          = var.db_password
   db_name           = "dev" # Default database schema
 
   # Advanced Configuration
-  parameter_group_name    = aws_db_parameter_group.mysql_cdc.name
-  db_subnet_group_name    = aws_db_subnet_group.main.name
-  vpc_security_group_ids  = [aws_security_group.rds.id]
-  
+  parameter_group_name   = aws_db_parameter_group.mysql_cdc.name
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
   # Operational Settings
   skip_final_snapshot     = true # Speeds up destruction during testing
   publicly_accessible     = true # Allows local DBeaver connection for demo

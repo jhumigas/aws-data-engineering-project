@@ -15,11 +15,11 @@ variable "subnet_ids" {
 }
 
 variable "allowed_security_group_ids" {
-  type = list(string)
+  type    = list(string)
   default = []
 }
 
 variable "db_password" {
-  type        = string 
-  default     = "AdminPassword123!"
+  type    = string
+  default = "AdminPassword123!"
 }

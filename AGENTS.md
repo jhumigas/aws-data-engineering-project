@@ -13,15 +13,22 @@ An enterprise-grade data pipeline moving data from an RDS MySQL source to a Reds
 
 ### Orchestration Sequence
 The Step Function orchestrator follows a strict sequential dependency:
-1. **Parallel Dimensions:** `Customer` and `Product` are processed first.
-2. **Parallel Facts:** `Orders` and `OrderDetails` are processed ONLY after dimensions succeed.
+1. **Crawlers:** The 4 Glue Crawlers refresh the bronze tables in the Data Catalog.
+2. **Parallel Transform:** The 4 `raw_*_etl_job` jobs convert bronze CSV to silver Parquet.
+3. **Parallel Dimensions:** `Customer` and `Product` are loaded and merged (`sp_merge_dim_*`).
+4. **Parallel Facts:** `Orders` and `OrderDetails` are loaded and merged (`sp_merge_fact_*`) ONLY after dimensions succeed.
 
-### SCD Type 2 Merge Pattern
-Stored Procedures in Redshift follow this 4-step sequence:
+Every Redshift merge is polled with `describeStatement`; a `FAILED` or `ABORTED` merge fails the execution.
+
+### SCD Type 2 Merge Pattern (Dimensions)
+Dimension Stored Procedures in Redshift follow this 4-step sequence:
 1. **Stage:** Glue loads raw data into `stage_` table.
 2. **Expire:** Deactivate existing records in the Gold table where `hash_value` changed.
 3. **Insert:** Insert new active records.
 4. **Clean:** Truncate the staging table.
+
+### Fact Merge Pattern
+Fact Stored Procedures upsert: delete fact rows whose ID is in staging, insert the latest staged version of each ID, then truncate staging.
 
 ## Tech Stack & Tooling
 - **Languages:** Python (3.9+), SQL (Redshift/MySQL), PySpark (Spark 3.x)
@@ -50,7 +57,7 @@ For complex tasks, use the following specialized workflows:
 ```bash
 make build-lambda      # Package Lambda with uv (Linux target)
 make setup-rds         # Flyway migrations + CDC config
-make setup-redshift    # Warehouse DDL + Stored Procedures
+make setup-redshift    # Warehouse DDL + Stored Procedures (awaited, stops on first error)
 make trigger-pipeline  # Trigger end-to-end Step Function
 ```
 

@@ -19,7 +19,7 @@ variable "rds_secret_arn" {
 }
 
 variable "rds_security_group_id" {
-  type = string
+  type        = string
   description = "Security group of the RDS instance to allow ingress from Lambda"
 }
 

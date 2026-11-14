@@ -36,17 +36,18 @@ This guide explains how to deploy the AWS Data Engineering Project infrastructur
    ```
 
 4. **Initialize Redshift Warehouse**:
-   Establish the Redshift `sales` schema, tables, and SCD Type 2 procedures:
+   Establish the Redshift `sales` schema, tables, SCD Type 2 procedures and fact merge procedures.
+   Each statement is awaited in order, and the target stops on the first Redshift error:
    ```bash
    make setup-redshift
    ```
 
-5. **Discover Schema (Glue Crawlers)**:
-   Trigger schema discovery for the raw data in S3:
+5. **Discover Schema (Glue Crawlers, optional)**:
+   The Step Functions pipeline runs the crawlers itself on every execution.
+   To refresh the Data Catalog by hand, for example before exploring it in Athena:
    ```bash
    make trigger-crawlers
    ```
-   *Note: Wait for all crawlers to show a status of 'READY' in the AWS Console before proceeding.*
 
 6. **Trigger the Data Pipeline**:
    Start the end-to-end data flow:
@@ -74,11 +75,13 @@ For a deep dive into the system's design, see the [Security Design](../SECURITY_
 
 2. **Monitor Step Functions**: 
    Check the execution status in the AWS Console. The pipeline will:
-   - Run Spark Jobs to transform CSV to Parquet.
-   - Load data into Redshift Staging.
-   - Run Stored Procedures for SCD Type 2 merge.
+   - Run the Glue Crawlers over the bronze layer.
+   - Run Spark Jobs to transform bronze CSV to silver Parquet.
+   - Load dimensions into Redshift Staging and run the SCD Type 2 merges.
+   - Load facts into Redshift Staging and upsert them into `fact_orders` and `fact_order_details`.
+   - Wait for every merge to finish, and fail the execution if one fails.
 
-2. **Query the Warehouse**:
+3. **Query the Warehouse**:
    Verify data existence via the Data API:
    ```bash
    aws redshift-data execute-statement \

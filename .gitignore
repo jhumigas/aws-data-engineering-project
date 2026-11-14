@@ -18,6 +18,7 @@ data_generator_lambda/build/
 .terraform
 *.tfstate
 *.tfstate.backup
+.terraform.tfstate.lock.info
 
 # tmp
 tmp/

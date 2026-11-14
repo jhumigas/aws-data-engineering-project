@@ -60,7 +60,7 @@ if customer_df_from_catalog.count() > 0:
                                         , col("cust_address")\
                                         , col("cust_country")\
                                         , col("cust_city")\
-                                        , col("cust_name"))
+                                        , col("name"))
     
     # create dataframe with new columns 
     customer_final_df = renamed_customer.withColumn("hash_value",sha2(concatenated_customer_fields, 256))\

@@ -222,6 +222,8 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
 .mini .r.empty span, .mini .r.empty span:last-child { color: var(--muted); text-align: left; }
 .mini .r.ent.solo { grid-template-columns: auto minmax(0, 1fr); }
 .mini .r.ent.solo span:last-child { color: var(--ink-2); text-align: left; }
+.facts .r b { font: 600 11px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; transition: color .3s; }
+.facts .r b.bump { color: var(--gold); animation: bump .5s var(--ease-out); }
 .mini.hot { transform: translateY(-1px); border-color: color-mix(in oklab, var(--hue, #fff) 70%, #fff); box-shadow: 0 12px 24px -14px color-mix(in oklab, var(--hue, #fff) 80%, transparent); }
 
 /* Bronze file list and gold dimension rows are live */
@@ -317,7 +319,7 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
 
 @media (prefers-reduced-motion: reduce) {
   .src, .mini, .cons, .connector .knob, .stage, .app-card, button, .task, .st, .par, .files .r, .dims .r { transition: none; }
-  .counter b.bump, .dims .r.fresh, .task.run::before { animation: none; }
+  .counter b.bump, .facts .r b.bump, .dims .r.fresh, .task.run::before { animation: none; }
 }
 </style>
 
@@ -439,6 +441,11 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
             <div id="dim-rows"></div>
           </div>
           <div class="counter"><span>versions <b id="n-ver">0</b></span><span>active <b id="n-act">0</b></span></div>
+          <div class="mini facts" id="gold-fact">
+            <div class="t">sales.fact_* <i>upsert</i></div>
+            <div class="r ent"><i style="background:var(--e-orders)"></i><span>fact_orders</span><b id="n-ford">0</b></div>
+            <div class="r ent"><i style="background:var(--e-details)"></i><span>fact_order_details</span><b id="n-fdet">0</b></div>
+          </div>
           <div class="foot">Analytics ready</div>
         </article>
 
@@ -458,21 +465,25 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
         <div class="flow">
           <div class="st" id="o-eb"><small>EventBridge</small><b>rate(1 hour)</b></div>
           <i class="arrow"></i>
+          <div class="st" id="o-crawl"><small>Run_Crawlers</small><b>4 crawlers</b></div>
+          <i class="arrow"></i>
+          <div class="st" id="o-xform"><small>Parallel_Transform</small><b>4 Glue jobs</b></div>
+          <i class="arrow"></i>
           <div class="par" id="o-dims">
             <small>Parallel_Load_Dimensions</small>
-            <div class="lane"><span class="task" id="o-cust-load">Glue load <span class="k">customer</span></span><span class="sep">→</span><span class="task" id="o-cust-sp">SP_Merge_Customer</span></div>
-            <div class="lane"><span class="task" id="o-prod-load">Glue load <span class="k">product</span></span><span class="sep">→</span><span class="task" id="o-prod-sp">SP_Merge_Product</span></div>
+            <div class="lane"><span class="task" id="o-cust-load">Load <span class="k">customer</span></span><span class="sep">→</span><span class="task" id="o-cust-sp">Merge</span></div>
+            <div class="lane"><span class="task" id="o-prod-load">Load <span class="k">product</span></span><span class="sep">→</span><span class="task" id="o-prod-sp">Merge</span></div>
           </div>
           <i class="arrow"></i>
           <div class="par" id="o-facts">
             <small>Parallel_Load_Facts</small>
-            <div class="lane"><span class="task" id="o-ord">Glue_Load_Orders</span></div>
-            <div class="lane"><span class="task" id="o-det">Glue_Load_OrderDetails</span></div>
+            <div class="lane"><span class="task" id="o-ord">Load <span class="k">orders</span></span><span class="sep">→</span><span class="task" id="o-ord-sp">Merge</span></div>
+            <div class="lane"><span class="task" id="o-det">Load <span class="k">details</span></span><span class="sep">→</span><span class="task" id="o-det-sp">Merge</span></div>
           </div>
           <i class="arrow"></i>
           <div class="st" id="o-ok"><small>Step Functions</small><b>Succeed</b></div>
         </div>
-        <p class="note">Dimensions merge first so facts always find their customer and product.</p>
+        <p class="note">Crawlers refresh the catalog, then dimensions merge first so facts always find their customer and product. Each merge is awaited.</p>
       </section>
 
       <a class="credit" href="https://www.linkedin.com/in/davidmugisha/" target="_blank" rel="noopener">David Mugisha · linkedin.com/in/davidmugisha</a>
@@ -523,6 +534,11 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
     return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`;
   };
   const line = (a, b) => `M${a.x},${a.y} L${b.x},${b.y}`;
+  // Down the left edge of the gold column, past the dimension panel, into the fact panel
+  const elbow = (a, b, out = 7, r = 5) => {
+    const x = Math.min(a.x, b.x) - out;
+    return `M${a.x},${a.y} L${x + r},${a.y} Q${x},${a.y} ${x},${a.y + r} L${x},${b.y - r} Q${x},${b.y} ${x + r},${b.y} L${b.x},${b.y}`;
+  };
 
   // Wires. The left half streams all day; the right half only moves on the hourly run (dashed).
   const DEFS = {
@@ -540,19 +556,20 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
     "silver-load":  () => curve(pt("silver-schema", "right"), knob("glue-l", "left")),
     "load-stage":   () => curve(knob("glue-l", "right"), pt("gold-stage", "left")),
     "stage-dim":    () => line(pt("gold-stage", "bottom"), pt("gold-dim", "top")),
+    "stage-fact":   () => elbow(pt("gold-stage", "left", 0.82), pt("gold-fact", "left")),
     "dim-cons0":    () => curve(pt("gold-dim", "right", 0.3), pt("cons-0", "left")),
     "dim-cons1":    () => curve(pt("gold-dim", "right", 0.5), pt("cons-1", "left")),
     "dim-cons2":    () => curve(pt("gold-dim", "right", 0.7), pt("cons-2", "left")),
   };
-  const BATCH = new Set(["bronze-glue", "glue-silver", "silver-load", "load-stage", "stage-dim"]);
+  const BATCH = new Set(["bronze-glue", "glue-silver", "silver-load", "load-stage", "stage-dim", "stage-fact"]);
   const PULSE = {
     "app-customer": "src-customer", "app-product": "src-product", "app-orders": "src-orders", "app-details": "src-details",
     "customer-dms": "dms", "product-dms": "dms", "orders-dms": "dms", "details-dms": "dms",
     "dms-bronze": "bronze-files", "bronze-glue": "glue-t", "glue-silver": "silver-schema",
-    "silver-load": "glue-l", "load-stage": "gold-stage", "stage-dim": "gold-dim",
+    "silver-load": "glue-l", "load-stage": "gold-stage", "stage-dim": "gold-dim", "stage-fact": "gold-fact",
     "dim-cons0": "cons-0", "dim-cons1": "cons-1", "dim-cons2": "cons-2",
   };
-  const STAGE_OF = { "bronze-files": "stage-bronze", "silver-schema": "stage-silver", "gold-stage": "stage-gold", "gold-dim": "stage-gold" };
+  const STAGE_OF = { "bronze-files": "stage-bronze", "silver-schema": "stage-silver", "gold-stage": "stage-gold", "gold-dim": "stage-gold", "gold-fact": "stage-gold" };
 
   const paths = {};
   const wireLayer = document.createElementNS(NS, "g");
@@ -659,10 +676,12 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
   }
 
   // ---------- Model: bronze files, gold dimension rows, orchestration ----------
-  let files = [], dims = [], fileSeq = 0;
+  let files = [], dims = [], fileSeq = 0, facts = { orders: 0, details: 0 };
   const fileRows = $("file-rows"), dimRows = $("dim-rows");
   const nWait = $("n-wait"), nRead = $("n-read"), nVer = $("n-ver"), nAct = $("n-act");
   const FILE_SLOTS = 4, DIM_SLOTS = 3;
+  const factNum = { orders: $("n-ford"), details: $("n-fdet") };
+  function renderFacts() { for (const e of Object.keys(facts)) setNum(factNum[e], facts[e]); }
 
   function setNum(el, v) {
     if (el.textContent === String(v)) return;
@@ -711,7 +730,7 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
     renderDims(animate ? dims.length - 1 : -1);
   }
 
-  const ORCH = ["o-eb", "o-dims", "o-cust-load", "o-cust-sp", "o-prod-load", "o-prod-sp", "o-facts", "o-ord", "o-det", "o-ok"];
+  const ORCH = ["o-eb", "o-crawl", "o-xform", "o-dims", "o-cust-load", "o-cust-sp", "o-prod-load", "o-prod-sp", "o-facts", "o-ord", "o-ord-sp", "o-det", "o-det-sp", "o-ok"];
   const setO = (id, state) => { const el = $(id); el.classList.remove("run", "done"); if (state) el.classList.add(state); };
   const resetOrch = () => ORCH.forEach((id) => setO(id, null));
 
@@ -724,14 +743,22 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
 
     const pending = files.filter((f) => !f.read).map((f) => f.entity);
     const has = (e) => pending.includes(e);
+    const count = (e) => pending.filter((p) => p === e).length;
+
+    // Crawlers refresh the bronze tables in the Data Catalog
+    setO("o-crawl", "run"); pulse("bronze-files");
+    await wait(0.8, tk); if (tk.cancelled) return;
+    setO("o-crawl", "done");
 
     // Bronze -> silver: transform jobs pick up only unread files (bookmarks)
+    setO("o-xform", "run");
     await Promise.all(pending.map(async (e, k) => {
       await wait(k * 0.28, tk);
       await travel(["bronze-glue", "glue-silver"], COLORS[e], tk);
     }));
     if (tk.cancelled) return;
     readFiles();
+    setO("o-xform", "done");
 
     // Dimensions in parallel: Glue load into stage_, then the SCD2 merge procedure
     setO("o-dims", "run");
@@ -753,17 +780,22 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
     setO("o-dims", "done");
     await wait(0.4, tk);
 
-    // Facts in parallel, only after dimensions succeed
+    // Facts in parallel, only after dimensions succeed: Glue load into stage_, then the upsert procedure
     setO("o-facts", "run");
-    const fact = async (e, id, delay) => {
-      setO(id, "run");
+    const fact = async (e, load, sp, delay) => {
+      setO(load, "run");
       await wait(delay, tk);
       if (has(e)) await travel(["silver-load", "load-stage"], COLORS[e], tk);
       else await wait(1.1, tk);
       if (tk.cancelled) return;
-      setO(id, "done");
+      setO(load, "done"); setO(sp, "run");
+      if (has(e)) await travel(["stage-fact"], COLORS[e], tk);
+      else await wait(0.4, tk);
+      if (tk.cancelled) return;
+      facts[e] += count(e); renderFacts();
+      setO(sp, "done");
     };
-    await Promise.all([fact("orders", "o-ord", 0), fact("details", "o-det", 0.3)]);
+    await Promise.all([fact("orders", "o-ord", "o-ord-sp", 0), fact("details", "o-det", "o-det-sp", 0.3)]);
     if (tk.cancelled) return;
     setO("o-facts", "done"); setO("o-ok", "done");
 
@@ -771,7 +803,8 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
   }
   function applyBatch(merge) {
     resetOrch();
-    readFiles(); merge(false);
+    for (const f of files) if (!f.read && f.entity in facts) facts[f.entity] += 1;
+    readFiles(); merge(false); renderFacts();
     ORCH.forEach((id) => setO(id, "done"));
   }
 
@@ -808,7 +841,7 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
     {
       op: "run", label: "hourly run", dot: "orch",
       what: "The hourly run promotes the waiting files from bronze to gold",
-      how: "EventBridge rate(1 hour) → Step Functions → Glue → stage_* → CALL sales.sp_merge_dim_*()",
+      how: "EventBridge rate(1 hour) → crawlers → Glue → stage_* → CALL sales.sp_merge_dim_*(), sp_merge_fact_*()",
       run: (tk) => runBatch(tk, mergeFirst),
       apply: () => applyBatch(mergeFirst),
     },
@@ -847,9 +880,9 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
 
   // State right before step i: replay the instant effect of every earlier step
   function stateBefore(i) {
-    files = []; dims = []; fileSeq = 0; resetOrch();
+    files = []; dims = []; fileSeq = 0; facts = { orders: 0, details: 0 }; resetOrch();
     for (let j = 0; j < i; j++) STEPS[j].apply();
-    renderFiles(); renderDims();
+    renderFiles(); renderDims(); renderFacts();
   }
 
   let token = { cancelled: true };
@@ -887,7 +920,7 @@ svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
   if (reduced) { btnPlay.hidden = true; $("btn-restart").hidden = true; }
 
   // ---------- Boot ----------
-  renderFiles(); renderDims();
+  renderFiles(); renderDims(); renderFacts();
   const boot = () => { layout(); requestAnimationFrame(frame); ambient(); start(0); };
   (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(boot);
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layout, 120); });

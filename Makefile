@@ -51,18 +51,17 @@ setup-rds: ## Run RDS migrations and CDC setup
 	docker run --rm mysql:8.0 mysql -h $(DB_ENDPOINT) -u admin -p$(DB_PASSWORD) -e "CALL mysql.rds_set_configuration('binlog retention hours', 24);"
 
 ## Initialize Redshift schema, tables, and stored procedures
+# Each statement is awaited, in order, so the materialized view only runs once the fact tables exist.
+# schema_database.sql is for manual setup only: CREATE DATABASE cannot run through the Data API transaction.
 setup-redshift: ## Initialize Redshift schema and objects
 	$(eval REDSHIFT_CLUSTER := $(shell cd terraform && terraform output -raw redshift_cluster_identifier))
-	@echo "Creating Redshift schema and objects..."
-	aws redshift-data execute-statement --cluster-identifier $(REDSHIFT_CLUSTER) --database dev --db-user adminuser --sql "CREATE SCHEMA IF NOT EXISTS sales;" --region ca-central-1
+	$(eval RUN_SQL := data_warehouse_redshift/run_sql.sh $(REDSHIFT_CLUSTER) dev adminuser ca-central-1)
+	@echo "Creating Redshift schema..."
+	$(RUN_SQL) --sql "CREATE SCHEMA IF NOT EXISTS sales;"
 	@echo "Applying DDLs..."
-	for file in $$(ls data_warehouse_redshift/ddl/*.sql); do \
-		aws redshift-data execute-statement --cluster-identifier $(REDSHIFT_CLUSTER) --database dev --db-user adminuser --sql "$$(cat $$file)" --region ca-central-1; \
-	done
+	$(RUN_SQL) $$(ls data_warehouse_redshift/ddl/*.sql | grep -v schema_database.sql)
 	@echo "Applying Stored Procedures..."
-	for file in $$(ls data_warehouse_redshift/stored_procedures/*.sql); do \
-		aws redshift-data execute-statement --cluster-identifier $(REDSHIFT_CLUSTER) --database dev --db-user adminuser --sql "$$(cat $$file)" --region ca-central-1; \
-	done
+	$(RUN_SQL) data_warehouse_redshift/stored_procedures/*.sql
 
 ## Trigger all Glue crawlers for schema discovery
 trigger-crawlers: ## Trigger all Glue crawlers

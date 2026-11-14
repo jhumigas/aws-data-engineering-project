@@ -41,7 +41,7 @@ resource "aws_lambda_function" "data_generator" {
   filename      = "${path.module}/lambda_function.zip"
   function_name = "${var.project_name}-${var.environment}-data-generator"
   role          = aws_iam_role.lambda_role.arn
-  handler       = "lambda_function.lambda_handler" 
+  handler       = "lambda_function.lambda_handler"
   runtime       = "python3.13"
   timeout       = 300 # 5 minute execution limit
 
@@ -94,8 +94,8 @@ resource "aws_iam_policy" "lambda_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["secretsmanager:GetSecretValue"]
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
         Resource = [var.rds_secret_arn]
       },
       {
@@ -110,9 +110,9 @@ resource "aws_iam_policy" "lambda_policy" {
       {
         Effect = "Allow"
         Action = [
-            "logs:CreateLogGroup",
-            "logs:CreateLogStream",
-            "logs:PutLogEvents"
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
         ]
         Resource = "arn:aws:logs:*:*:*"
       }
