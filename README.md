@@ -50,7 +50,7 @@ Finally, we use Quicksight to visualize the data.
 ## Deployment Guides
 Choose your deployment path:
 - [Automated Walkthrough (Terraform)](./docs/walkthroughs/walkthrough_terraform.md) - Recommended.
-- [Manual Walkthrough (Console)](./docs/walkthroughs/walkthrough_manual.md) - Step-by-step console instructions.
+- [Manual Walkthroughs (Console)](./docs/walkthroughs/README.md) - Step-by-step console instructions, one page per component.
 
 ## Documentation
 - [Security Design](./docs/SECURITY_DESIGN.md) - Deep dive into IAM and Least Privilege.
